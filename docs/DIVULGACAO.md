@@ -1,6 +1,6 @@
 # Divulgação e tópicos do GitHub
 
-Repositório: https://github.com/vhloliveirapucsp-hub/nuvem-palavras-z
+Repositório: https://github.com/Victor-Levindo/nuvem-palavras-z
 
 ## Tópicos selecionados
 
