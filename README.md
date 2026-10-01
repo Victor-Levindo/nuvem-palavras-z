@@ -12,7 +12,7 @@ Crie uma visão do vocabulário de um ou mais PDFs, investigue palavras e expres
 
 ## Instalar
 
-1. Baixe o [instalador nuvem-palavras-z-0.9.4.xpi](https://github.com/vhloliveirapucsp-hub/nuvem-palavras-z/releases/download/v0.9.4/nuvem-palavras-z-0.9.4.xpi) na [página da versão 0.9.4](https://github.com/vhloliveirapucsp-hub/nuvem-palavras-z/releases/tag/v0.9.4).
+1. Baixe o [instalador nuvem-palavras-z-0.9.4.xpi](https://github.com/Victor-Levindo/nuvem-palavras-z/releases/download/v0.9.4/nuvem-palavras-z-0.9.4.xpi) na [página da versão 0.9.4](https://github.com/Victor-Levindo/nuvem-palavras-z/releases/tag/v0.9.4).
 2. No Zotero, abra **Ferramentas → Plugins** e instale o arquivo `.xpi` a partir do gerenciador de plugins.
 3. Reinicie o Zotero.
 
