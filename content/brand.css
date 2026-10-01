@@ -1,0 +1,54 @@
+/* Identidade visual adicionada na 0.8.2; controles e layout originais preservados. */
+:root{--ink:#33282b;--muted:#716467;--border:#eadde0;--paper:#fff;--green:#c62828;--bg:#fff8f8}
+button,input,textarea,select{border-color:#e0cdd1!important}
+button:hover{background:#fff0f0}.primary:hover{background:#a91f24}
+input[type=range],input[type=checkbox]{accent-color:#c62828}
+#notice{background:#fff0ed}th{background:#fff6f6}th,td{border-bottom-color:#f0e3e5}
+.interface-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;font-size:12px}
+#about-panel{margin-top:20px;border-top:4px solid #c62828}
+[hidden]{display:none!important}
+@media(max-width:850px){header{flex-wrap:wrap}.workspace{grid-template-columns:1fr}main{padding:16px}}
+
+/* Caixa de idiomas própria: opções são botões HTML comuns. */
+.language-picker{position:relative}
+#interface-language{display:flex;align-items:center;gap:14px;min-width:118px;justify-content:space-between;background:#fff}
+.language-chevron{font-size:11px;color:var(--muted)}
+.language-options{position:absolute;right:0;top:calc(100% + 8px);z-index:50;width:260px;max-width:calc(100vw - 32px);padding:14px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 30px #38202426}
+#language-options-title{font-size:12px;font-weight:bold;color:var(--muted);margin:0 0 9px}
+.language-choices{display:grid;gap:5px}
+.language-choices button{width:100%;text-align:left;font-size:14px;display:flex;align-items:center;justify-content:space-between;padding:9px 12px}
+.language-choices button[aria-pressed=true]{background:#fff1f0;color:#9d2424;border-color:#d79898!important;font-weight:bold}
+.language-choices button[aria-pressed=true]::after{content:'✓';margin-left:12px}
+button:focus-visible{outline:2px solid #b52a2a;outline-offset:2px}
+
+.article-comparison{margin-top:20px;padding:18px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.article-comparison h2{margin-bottom:8px}
+.comparison-query-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:12px}
+.comparison-query-row>div{flex:1;min-width:220px}
+#comparison-query{width:100%;font:inherit;color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:9px;background:#fff}
+#comparison-title{color:var(--ink)}
+#comparison-summary{font-size:13px;font-weight:bold}
+#comparison-rows td:first-child{overflow-wrap:anywhere;min-width:160px}
+#comparison-rows td:nth-child(2){width:110px;font-variant-numeric:tabular-nums}
+#frequencies td:nth-child(3),#frequencies th:nth-child(3){text-align:right;width:110px}
+#frequencies td:nth-child(3) button{padding:4px 8px;font-size:12px}
+
+.export-picker{position:relative}
+.export-options{position:absolute;z-index:45;background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 8px 25px #38202426;top:calc(100% + 6px)}
+.export-options{right:0;width:220px}
+.export-options button{display:block;width:100%;text-align:left;margin:3px 0}
+#compound-rows td:nth-child(4),#compound-rows th:nth-child(4){text-align:right;width:110px}
+#compound-rows td:nth-child(4) button{padding:4px 8px;font-size:12px}
+#advanced-options{border-top:1px solid var(--border);padding-top:12px}
+#analysis-options{padding-top:8px}
+.compact-help{margin-top:18px;font-size:13px}
+
+/* Consulta e expressões reunidas; mantém os mesmos controles de filtros. */
+#comparison-expressions{margin-top:16px;padding-top:12px;border-top:1px solid var(--border)}
+#comparison-expressions textarea{max-width:100%}
+#expression-message{min-height:0}
+#expression-message:empty{display:none}
+.comparison-query-row button{max-width:100%}
+
+#expression-suggestions{margin:12px 0}
+#comparison-message:empty{display:none}

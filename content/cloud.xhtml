@@ -1,0 +1,155 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="pt-BR">
+<head>
+<title>Nuvem de palavras do artigo</title>
+<style>
+:root{--ink:#183c39;--muted:#647a78;--border:#dce5df;--paper:#fff;--green:#256e5d;--bg:#f3f5ef}
+*{box-sizing:border-box}
+html{height:100%}
+body{margin:0;height:100%;overflow:auto;background:var(--bg);color:var(--ink);font:15px/1.5 Arial,sans-serif}
+main{max-width:1400px;margin:auto;padding:28px}
+header{margin-bottom:22px;display:flex;gap:24px;align-items:flex-start;justify-content:space-between}
+.eyebrow{text-transform:uppercase;font-size:11px;letter-spacing:2px;font-weight:bold;color:var(--green)}
+h1{font-size:26px;line-height:1.2;margin:9px 0 10px;max-width:950px}
+h2{font-size:17px;margin:0 0 15px}
+p{margin:7px 0}
+.muted{color:var(--muted);font-size:13px}
+.badge{white-space:nowrap;border:1px solid #c8d9ce;padding:6px 10px;border-radius:20px;font-size:12px}
+.workspace{display:grid;grid-template-columns:255px minmax(0,1fr);gap:20px}
+.panel{background:var(--paper);border:1px solid var(--border);border-radius:16px;padding:22px}
+label.field{display:block;font-size:12px;font-weight:bold;margin:18px 0 6px}
+input[type=number],textarea{width:100%;font:inherit;color:var(--ink);border:1px solid #cdd9d0;border-radius:8px;background:#fff;padding:9px}
+textarea{resize:vertical;font-size:13px;line-height:1.5}
+.checks{display:flex;flex-wrap:wrap;gap:10px;font-size:13px}
+.check{display:flex;gap:7px;align-items:flex-start;margin:14px 0;font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{font:inherit;border-radius:8px;padding:9px 14px;border:1px solid #cdd9d0;background:white;color:var(--ink);cursor:pointer;font-size:13px}
+button:hover{background:#edf3ee}
+button:disabled{opacity:.45;cursor:default}
+.primary{background:var(--green);color:white;border-color:var(--green);width:100%;margin-top:18px;font-weight:bold}
+.primary:hover{background:#195343}
+.visual{min-width:0}
+.visualhead{display:flex;gap:12px;justify-content:space-between;align-items:center;margin-bottom:5px;flex-wrap:wrap}
+.actions{display:flex;gap:7px;flex-wrap:wrap}
+#cloud{width:100%;height:auto;background:#fff;display:block}
+.word{cursor:pointer}
+.word:hover{opacity:.65}
+#status{min-height:22px;font-size:12px;color:var(--muted)}
+#export-message{min-height:20px;font-weight:bold}
+#notice{background:#f5f1e4;padding:10px 13px;border-radius:7px;font-size:12px;margin-top:10px}
+details{margin-top:22px}
+summary{cursor:pointer;font-weight:bold;font-size:13px;margin-bottom:12px}
+.tablewrap{max-height:280px;overflow:auto;margin-top:15px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #e9eee8}
+th{position:sticky;top:0;background:#f6f8f3}
+td:nth-child(2),th:nth-child(2){text-align:right}
+footer{font-size:12px;color:var(--muted);margin-top:20px}
+.small{font-size:12px}
+.row{display:flex;gap:8px;margin-top:10px}
+.row button{flex:1;padding:8px 6px;font-size:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chips button{padding:5px 10px}
+#compound-panel{margin-top:18px}
+#compound-panel td:nth-child(3),#compound-panel th:nth-child(3){text-align:left;color:var(--muted)}
+#error{color:#a3322a;font-size:13px;margin-top:10px}
+#corpus{min-height:220px}
+</style>
+<link rel="stylesheet" href="brand.css"/>
+</head>
+<body id="nuvem-interface-root">
+<main>
+<header>
+  <div>
+    <div class="eyebrow">Nuvem de Palavras Z</div>
+    <h1 id="article-title"/>
+    <p class="muted" id="source"/>
+    <p class="muted" id="coverage"/>
+  </div>
+  <div class="interface-tools"><label data-i18n="Idioma da interface" id="interface-language-label">Idioma da interface</label>
+<div class="language-picker" id="language-picker"><button id="interface-language" type="button" aria-haspopup="dialog" aria-controls="language-options" aria-expanded="false" aria-labelledby="interface-language-label current-language"><span id="current-language">Português</span><span aria-hidden="true" class="language-chevron">▾</span></button><div id="language-options" class="language-options" role="dialog" aria-labelledby="language-options-title" hidden="hidden"><p id="language-options-title" data-i18n="Idioma da interface">Idioma da interface</p><div class="language-choices"><button type="button" data-language="pt-BR" lang="pt-BR" aria-pressed="true">Português</button><button type="button" data-language="en" lang="en" aria-pressed="false">English</button><button type="button" data-language="es" lang="es" aria-pressed="false">Español</button><button type="button" data-language="fr" lang="fr" aria-pressed="false">Français</button><button type="button" data-language="de" lang="de" aria-pressed="false">Deutsch</button><button type="button" data-language="zh-CN" lang="zh-CN" aria-pressed="false">简体中文</button><button type="button" data-language="ja" lang="ja" aria-pressed="false">日本語</button></div></div></div>
+<button data-i18n="Ajuda" id="help-open" type="button">Ajuda</button><button id="about-open" type="button" data-i18n="Sobre">Sobre</button></div>
+</header>
+<div class="workspace">
+<aside class="panel">
+<h2 data-i18n="Ajustar a nuvem">Ajustar a nuvem</h2>
+<label class="field" for="limit" data-i18n="Quantidade de palavras">Quantidade de palavras</label>
+<input id="limit" type="range" min="15" max="150" step="15" value="90" style="width:100%"/>
+<p class="small"><output id="limit-value">90</output><span data-i18n="palavras · de 15 a 150"> palavras · de 15 a 150</span></p>
+<div class="grid2">
+  <div><label class="field" for="min-length" data-i18n="Mín. de letras">Mín. de letras</label><input id="min-length" type="number" min="1" max="20" value="3"/></div>
+  <div><label class="field" for="min-freq" data-i18n="Mín. de ocorrências">Mín. de ocorrências</label><input id="min-freq" type="number" min="1" max="9999" value="2"/></div>
+</div>
+<label class="field" data-i18n="Ignorar palavras comuns">Ignorar palavras comuns</label>
+<div class="checks">
+  <label><input id="pt" type="checkbox" checked="checked"/><span data-i18n="Português"> Português</span></label>
+  <label><input id="en" type="checkbox" checked="checked"/><span data-i18n="Inglês"> Inglês</span></label>
+  <label><input id="es" type="checkbox"/><span data-i18n="Espanhol"> Espanhol</span></label>
+</div>
+<label class="field" for="exclude" data-i18n="Outras palavras para ignorar">Outras palavras para ignorar</label>
+<textarea id="exclude" rows="4" placeholder="Ex.: artigo, estudo, autor"/>
+<label class="check"><input id="references" type="checkbox" checked="checked"/><span data-i18n="Excluir referências" title="Excluir a seção final de referências quando houver um título reconhecível." data-i18n-title="Excluir a seção final de referências quando houver um título reconhecível.">Excluir referências</span></label>
+<label class="check"><input id="group" type="checkbox"/><span data-i18n="Agrupar singular e plural (dado / dados)">Agrupar singular e plural (dado / dados)</span></label>
+<button id="generate" class="primary" data-i18n="Atualizar nuvem">Atualizar nuvem</button>
+<div id="error" role="alert"/>
+<label class="check"><input id="rotate" type="checkbox"/><span data-i18n="Incluir palavras na vertical">Incluir palavras na vertical</span></label>
+<div class="row"><button id="save-defaults" title="Guarda filtros, palavras ignoradas e expressões para as próximas nuvens" data-i18n="Salvar como padrão" data-i18n-title="Guarda filtros, palavras ignoradas e expressões para as próximas nuvens">Salvar como padrão</button><button id="reset-defaults" data-i18n="Restaurar">Restaurar</button></div>
+</aside>
+<section class="panel visual">
+<div class="visualhead">
+  <h2 style="margin:0" data-i18n="Palavras mais frequentes">Palavras mais frequentes</h2>
+  <div class="actions">
+    <button id="save-zotero" hidden="hidden" title="Grava estes ajustes no anexo da nuvem" data-i18n="Salvar no Zotero" data-i18n-title="Grava estes ajustes no anexo da nuvem">Salvar no Zotero</button>
+    <div id="export-picker" class="export-picker"><button data-i18n="Exportar" id="export-open" type="button" aria-haspopup="dialog" aria-controls="export-options" aria-expanded="false">Exportar</button><div id="export-options" class="export-options" role="dialog" aria-label="Exportar" data-i18n-aria-label="Exportar" hidden="hidden"><button id="jpg-export" data-i18n="Imagem JPG" type="button">Imagem JPG</button>
+    <button id="png-export" data-i18n="Imagem PNG" type="button">Imagem PNG</button>
+    <button id="svg-export" data-i18n="Imagem SVG" type="button">Imagem SVG</button>
+    <button id="csv-export" data-i18n="Frequências CSV" type="button">Frequências CSV</button>
+  <button id="comparison-csv" type="button" disabled="disabled" data-i18n="Contagem por artigo CSV">Contagem por artigo CSV</button></div></div></div>
+</div>
+<p id="status"/>
+<p id="export-message" class="muted" role="status"/>
+<svg xmlns="http://www.w3.org/2000/svg" id="cloud" viewBox="0 0 1200 720" role="img" aria-label="Nuvem de palavras do artigo" data-i18n-aria-label="Nuvem de palavras do artigo"/>
+<div id="notice" hidden="hidden"/>
+<section id="article-comparison" class="article-comparison" aria-labelledby="comparison-title">
+<h2 id="comparison-title" data-i18n="Consulta por artigo">Consulta por artigo</h2>
+<p class="muted" data-i18n="Consulte uma palavra ou expressão e veja as ocorrências em cada artigo, incluindo zero.">Consulte uma palavra ou expressão e veja as ocorrências em cada artigo, incluindo zero.</p>
+<div class="comparison-query-row"><div><label class="field" for="comparison-query" data-i18n="Palavra ou expressão">Palavra ou expressão</label>
+<input id="comparison-query" type="text" placeholder="Ex.: dados ou proteção de dados" data-i18n-placeholder="Ex.: dados ou proteção de dados"/></div>
+<button id="comparison-run" type="button" data-i18n="Consultar por artigo">Consultar por artigo</button>
+<button data-i18n="Incluir expressão na nuvem" id="comparison-include" type="button" disabled="disabled">Incluir expressão na nuvem</button></div>
+<details id="expression-suggestions"><summary data-i18n="Sugerir expressões frequentes">Sugerir expressões frequentes</summary>
+<p class="muted" data-i18n="Pares e trios de palavras que aparecem juntos com frequência no texto. Clique numa sugestão para adicioná-la à lista de expressões.">Pares e trios de palavras que aparecem juntos com frequência no texto. Clique numa sugestão para adicioná-la à lista de expressões.</p>
+<button id="suggest" data-i18n="Calcular sugestões">Calcular sugestões</button><div id="suggestions" class="chips"/></details>
+<label class="check"><input id="comparison-cloud-mode" type="checkbox"/><span data-i18n="Clique na nuvem para consultar por artigo">Clique na nuvem para consultar por artigo</span></label>
+<p id="expression-message" class="muted" role="status"/><p id="comparison-message" class="muted" role="status"/>
+<p id="comparison-summary"/>
+<div id="comparison-table-wrap" class="tablewrap" hidden="hidden"><table><thead><tr><th data-i18n="Artigo">Artigo</th><th data-i18n="Ocorrências">Ocorrências</th></tr></thead><tbody id="comparison-rows"/></table></div>
+<details id="comparison-expressions"><summary data-i18n="Expressões incluídas na nuvem">Expressões incluídas na nuvem</summary><label data-i18n="Uma expressão por linha" class="field" for="compounds">Uma expressão por linha</label><textarea id="compounds" rows="4" placeholder="proteção de dados&#10;direito + memória"/>
+<label class="check"><input id="consume" type="checkbox" checked="checked"/><span data-i18n="Não contar de novo as palavras soltas que fazem parte das expressões.">Não contar de novo as palavras soltas que fazem parte das expressões.</span></label>
+<button data-i18n="Aplicar expressões" id="comparison-apply" type="button">Aplicar expressões</button><div id="compound-panel" hidden="hidden"><h2 data-i18n="Ocorrências das expressões na seleção">Ocorrências das expressões na seleção</h2>
+<div class="tablewrap"><table><thead><tr><th data-i18n="Expressão">Expressão</th><th data-i18n="Ocorrências">Ocorrências</th><th data-i18n="Formas encontradas">Formas encontradas</th><th data-i18n="Por artigo">Por artigo</th></tr></thead><tbody id="compound-rows"/></table></div></div>
+</details></section><details><summary data-i18n="Ver tabela de frequências">Ver tabela de frequências</summary>
+<p class="muted" data-i18n="Todas as palavras que passam pelos filtros, em ordem de frequência. A tabela mostra as primeiras 500; o CSV contém todas.">Todas as palavras que passam pelos filtros, em ordem de frequência. A tabela mostra as primeiras 500; o CSV contém todas.</p>
+<div class="tablewrap"><table><thead><tr><th data-i18n="Palavra">Palavra</th><th data-i18n="Ocorrências">Ocorrências</th><th data-i18n="Por artigo">Por artigo</th></tr></thead><tbody id="frequencies"/></table></div></details>
+</section>
+</div>
+<footer data-i18n="O tamanho das palavras representa sua frequência no texto.">O tamanho das palavras representa sua frequência no texto.</footer>
+<section id="about-panel" class="panel" hidden="hidden" aria-labelledby="about-title">
+<h2 id="about-title" data-i18n="Sobre">Sobre</h2><p><strong>Nuvem de Palavras Z</strong></p>
+<p data-i18n="Versão 0.9.4 · 01/10/2026">Versão 0.9.4 · 01/10/2026</p><p data-i18n="Autor: Victor Hugo Levindo">Autor: Victor Hugo Levindo</p>
+<p data-i18n="Compatível com Zotero 10.">Compatível com Zotero 10.</p>
+<h3 data-i18n="Função">Função</h3><p data-i18n="Cria nuvens de palavras de um ou mais PDFs no Zotero. Ajuste os filtros na lateral, consulte palavras ou expressões por artigo e use as sugestões abaixo da busca. Inclua expressões na nuvem e use + para aceitar preposições, artigos e contrações entre os termos. Salve os ajustes no Zotero ou exporte imagens e dados.">Cria nuvens de palavras de um ou mais PDFs no Zotero. Ajuste os filtros na lateral, consulte palavras ou expressões por artigo e use as sugestões abaixo da busca. Inclua expressões na nuvem e use + para aceitar preposições, artigos e contrações entre os termos. Salve os ajustes no Zotero ou exporte imagens e dados.</p><p data-i18n="Idiomas da interface: português, inglês, espanhol, francês, alemão, chinês e japonês. Os filtros de palavras são configurados separadamente.">Idiomas da interface: português, inglês, espanhol, francês, alemão, chinês e japonês. Os filtros de palavras são configurados separadamente.</p>
+<button id="about-close" type="button" data-i18n="Fechar">Fechar</button></section>
+<section id="help-panel" class="panel compact-help" hidden="hidden" aria-labelledby="help-title"><h2 data-i18n="Ajuda" id="help-title">Ajuda</h2><p data-i18n="Na Consulta por artigo, digite uma palavra ou expressão. As sugestões frequentes ficam logo abaixo da busca. Use Incluir expressão na nuvem para adicioná-la à lista e Aplicar expressões após editar a lista. Salvar no Zotero grava os ajustes no anexo; Salvar como padrão define os ajustes das próximas nuvens. A opção de palavras na vertical e Restaurar ficam na lateral." class="muted">Na Consulta por artigo, digite uma palavra ou expressão. As sugestões frequentes ficam logo abaixo da busca. Use Incluir expressão na nuvem para adicioná-la à lista e Aplicar expressões após editar a lista. Salvar no Zotero grava os ajustes no anexo; Salvar como padrão define os ajustes das próximas nuvens. A opção de palavras na vertical e Restaurar ficam na lateral.</p><p class="muted" data-i18n="Separe por vírgula ou linha. Clique numa palavra da nuvem para ignorá-la.">Separe por vírgula ou linha. Clique numa palavra da nuvem para ignorá-la.</p>
+<p class="muted" data-i18n="Sem +, a expressão segue a sequência escrita. Com +, aceita zero ou mais preposições, artigos e contrações entre os termos, na mesma ordem: direito + memória encontra direito à memória; proteção + dados encontra proteção de dados, dos dados e para os dados. O + não atravessa pontuação nem substitui palavras de conteúdo.">Sem +, a expressão segue a sequência escrita. Com +, aceita zero ou mais preposições, artigos e contrações entre os termos, na mesma ordem: direito + memória encontra direito à memória; proteção + dados encontra proteção de dados, dos dados e para os dados. O + não atravessa pontuação nem substitui palavras de conteúdo.</p>
+<p class="muted" data-i18n="Com essa opção desmarcada, clicar na nuvem continua excluindo a palavra. Você também pode usar Por artigo na tabela de frequências.">Com essa opção desmarcada, clicar na nuvem continua excluindo a palavra. Você também pode usar Por artigo na tabela de frequências.</p>
+<p class="muted" data-i18n="A consulta usa os filtros atuais. O mínimo de ocorrências e o limite da nuvem não escondem contagens de zero ou uma ocorrência por artigo.">A consulta usa os filtros atuais. O mínimo de ocorrências e o limite da nuvem não escondem contagens de zero ou uma ocorrência por artigo.</p>
+<p data-i18n="O tamanho das palavras representa sua frequência no texto. A nuvem não identifica a importância conceitual dos termos. Maiúsculas e variantes com/sem acento são contadas juntas; formas no singular e plural permanecem separadas. Texto em colunas, cabeçalhos e extração de PDF podem afetar os resultados.">O tamanho das palavras representa sua frequência no texto. A nuvem não identifica a importância conceitual dos termos. Maiúsculas e variantes com/sem acento são contadas juntas; formas no singular e plural permanecem separadas. Texto em colunas, cabeçalhos e extração de PDF podem afetar os resultados.</p><button data-i18n="Fechar" id="help-close" type="button">Fechar</button></section></main>
+<textarea id="corpus" spellcheck="false" aria-label="Texto do artigo" hidden="hidden" readonly="readonly" aria-hidden="true" tabindex="-1"/>
+<script src="core.js"/>
+<script src="article-analysis.js"/><script src="theme.js"/>
+<script src="cloud.js"/>
+<script src="translations.js"/>
+<script src="interface.js"/>
+<script src="article-analysis-ui.js"/><script src="simple-interface.js"/></body>
+</html>

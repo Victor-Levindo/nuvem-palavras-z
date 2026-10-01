@@ -1,0 +1,56 @@
+name: Publicar Nuvem de Palavras Z 0.9.4
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - dist/nuvem-palavras-z-0.9.4.xpi
+      - docs/RELEASE-0.9.4.md
+      - .github/workflows/release-0.9.4.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-0.9.4
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_SHA: ${{ github.sha }}
+    steps:
+      - name: Obter os arquivos e verificar o instalador
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist docs
+          for artifact in dist/nuvem-palavras-z-0.9.4.xpi dist/SHA256.txt docs/RELEASE-0.9.4.md; do
+            gh api "repos/$GH_REPO/contents/$artifact?ref=$RELEASE_SHA" --jq .content | base64 --decode > "$artifact"
+          done
+          (cd dist && sha256sum --check SHA256.txt)
+      - name: Publicar lançamento normal 0.9.4
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.9.4 --json tagName,isDraft,isPrerelease,assets > release.json; then
+            python3 - <<'PY'
+          import json
+          with open('release.json') as f:
+              release = json.load(f)
+          assert release['tagName'] == 'v0.9.4'
+          assert not release['isDraft'] and not release['isPrerelease']
+          assert any(asset['name'] == 'nuvem-palavras-z-0.9.4.xpi' for asset in release['assets'])
+          print('A versão 0.9.4 já está publicada com o instalador.')
+          PY
+          else
+            gh release create v0.9.4 dist/nuvem-palavras-z-0.9.4.xpi \
+              --target "$RELEASE_SHA" \
+              --title "Nuvem de Palavras Z 0.9.4" \
+              --notes-file docs/RELEASE-0.9.4.md \
+              --latest
+          fi

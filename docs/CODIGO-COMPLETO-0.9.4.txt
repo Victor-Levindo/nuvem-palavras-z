@@ -1,0 +1,2685 @@
+﻿Nuvem de Palavras Z — código completo 0.9.4
+
+===== ARQUIVO: bootstrap.js =====
+var NuvemPlugin;
+var NuvemScope;
+var NuvemChromeHandle;
+
+function install() {}
+function uninstall() {}
+
+async function startup({ rootURI, id }) {
+  await Zotero.initializationPromise;
+  await Zotero.unlockPromise;
+  await Zotero.uiReadyPromise;
+
+  // Versão de instalação manual: sem atualização automática.
+  try {
+    const { AddonManager } = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
+    const addon = await AddonManager.getAddonByID(id || "nuvem-palavras@victor-levindo.local");
+    if (addon) addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DISABLE;
+  } catch (error) { Zotero.logError(error); }
+
+  // Registra chrome://nuvem-palavras/content/ -> pasta "content" do plugin.
+  // É isso que permite abrir a ferramenta numa janela com permissões totais.
+  const aomStartup = Cc["@mozilla.org/addons/addon-manager-startup;1"].getService(Ci.amIAddonManagerStartup);
+  const manifestURI = Services.io.newURI(rootURI + "manifest.json");
+  NuvemChromeHandle = aomStartup.registerChrome(manifestURI, [
+    ["content", "nuvem-palavras", rootURI + "content/"]
+  ]);
+
+  NuvemScope = { Zotero, Services, Cc, Ci, ChromeUtils, IOUtils };
+  Services.scriptloader.loadSubScript(rootURI + "content/core.js", NuvemScope);
+  Services.scriptloader.loadSubScript(rootURI + "content/article-analysis.js", NuvemScope);
+  Services.scriptloader.loadSubScript(rootURI + "content/theme.js", NuvemScope);
+  Services.scriptloader.loadSubScript(rootURI + "plugin.js", NuvemScope);
+  Services.scriptloader.loadSubScript(rootURI + "content/main-interface.js", NuvemScope);
+  NuvemPlugin = NuvemScope.NuvemZotero;
+  NuvemPlugin.iconURI = rootURI + "icon.svg";
+  NuvemPlugin.installOpenHandler();
+  for (let win of Zotero.getMainWindows()) NuvemPlugin.addWindow(win);
+  Zotero.debug("[Nuvem] 0.9.4 iniciado");
+}
+
+function onMainWindowLoad({ window }) { NuvemPlugin?.addWindow(window); }
+function onMainWindowUnload({ window }) { NuvemPlugin?.removeWindow(window); }
+
+function shutdown() {
+  NuvemPlugin?.shutdown();
+  try { NuvemChromeHandle?.destruct(); } catch (error) { Zotero.logError(error); }
+  NuvemChromeHandle = undefined;
+  NuvemPlugin = undefined;
+  NuvemScope = undefined;
+}
+
+
+===== ARQUIVO: content/article-analysis-ui.js =====
+/* Controles adicionais. As funções e eventos originais de cloud.js permanecem intactos. */
+(() => {
+  const htmlNS = 'http://www.w3.org/1999/xhtml';
+  const el = id => document.getElementById(id);
+  const input = el('comparison-query');
+  const button = el('comparison-run');
+  const csvButton = el('comparison-csv');
+  const clickMode = el('comparison-cloud-mode');
+  const includeButton = el('comparison-include');
+  const expressionPanel = el('comparison-expressions');
+  let expressionMessage = '';
+  let report = null;
+  function t(source) {
+    const lang = document.documentElement.getAttribute('lang') || 'pt-BR';
+    return lang === 'pt-BR' ? source : NuvemTranslations[source]?.[lang] || NuvemTranslations[source]?.en || source;
+  }
+  function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
+  function format(source, values) { return t(source).replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? '')); }
+  function clearReport() {
+    report = null;
+    csvButton.disabled = true;
+    el('comparison-rows').replaceChildren();
+    el('comparison-table-wrap').hidden = true;
+    el('comparison-summary').textContent = '';
+  }
+  function availability() {
+    const state = NuvemArticleAnalysis.sources(DATA, el('corpus').value);
+    button.disabled = !state.ok;
+    clickMode.disabled = !state.ok;
+    refreshIncludeButton();
+    return state;
+  }
+  function showProblem(reason) {
+    clearReport();
+    const source = reason === 'missing'
+      ? 'Esta nuvem não possui a identificação dos artigos. Selecione os artigos e gere uma nova nuvem nesta versão.'
+      : reason === 'edited'
+        ? 'O texto reunido foi editado e não pode mais ser separado por artigo com segurança. Gere uma nova nuvem dos artigos para esta consulta.'
+        : 'Digite uma palavra ou uma expressão válida. Use + com a mesma ordem das palavras no texto.';
+    setText(el('comparison-message'), t(source));
+  }
+  function renderReport() {
+    const rows = el('comparison-rows');
+    rows.replaceChildren();
+    if (!report) return;
+    for (const article of report.rows) {
+      const tr = document.createElementNS(htmlNS, 'tr');
+      const name = document.createElementNS(htmlNS, 'td');
+      name.textContent = article.title;
+      name.setAttribute('title', article.pdfs.filter(Boolean).join('\n'));
+      const count = document.createElementNS(htmlNS, 'td');
+      count.textContent = String(article.count);
+      tr.appendChild(name); tr.appendChild(count); rows.appendChild(tr);
+    }
+    el('comparison-table-wrap').hidden = false;
+    csvButton.disabled = false;
+    setText(el('comparison-message'), t('Resultado da consulta:') + ' ' + report.query);
+    setText(el('comparison-summary'), format('{articles} artigos · {total} ocorrências', {articles:report.rows.length, total:report.total}));
+  }
+  function query() {
+    const state = availability();
+    if (!state.ok) { showProblem(state.reason); return; }
+    const result = NuvemArticleAnalysis.count(DATA, el('corpus').value, input.value, getOptions());
+    if (!result.ok) { showProblem(result.reason); return; }
+    report = result;
+    DATA.comparisonQuery = report.query; // o salvamento original inclui os novos metadados
+    renderReport();
+  }
+  function selectWord(row) {
+    const options = getOptions();
+    input.value = row.compound
+      ? String(options.compounds || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean)[row.specIndex] || row.word
+      : row.word;
+    query();
+    el('article-comparison').scrollIntoView({block:'nearest'});
+  }
+  function selectExpression(expression) {
+    input.value = expression;
+    query();
+    el('article-comparison').scrollIntoView({block:'nearest'});
+  }
+  function refreshIncludeButton() {
+    const selected = NuvemArticleAnalysis.target(input.value, getOptions());
+    includeButton.disabled = !selected.ok || !selected.key.startsWith('expr:');
+  }
+  function showExpressionMessage(source) {
+    expressionMessage = source;
+    setText(el('expression-message'), t(source));
+  }
+  includeButton.addEventListener('click', () => {
+    const options = getOptions();
+    const selected = NuvemArticleAnalysis.target(input.value, options);
+    if (!selected.ok || !selected.key.startsWith('expr:')) return;
+    const lines = String(options.compounds || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const added = Number(selected.key.slice(5)) >= lines.length;
+    if (added) {
+      lines.push(input.value.trim());
+      el('compounds').value = lines.join('\n');
+    }
+    expressionPanel.open = true;
+    try {
+      render(); // utiliza a geração original, sem substituir a contagem ou o salvamento
+      refreshQuery();
+      showExpressionMessage(added ? 'Expressão adicionada à lista da nuvem. Use Salvar no Zotero para gravar o ajuste.' : 'Essa expressão já está na lista da nuvem.');
+    } catch (error) { err('Erro ao gerar a nuvem: ' + error.message); }
+  });
+  el('comparison-apply').addEventListener('click', () => {
+    try { render(); refreshQuery(); showExpressionMessage('Expressões aplicadas. Use Salvar no Zotero para gravar o ajuste.'); }
+    catch (error) { err('Erro ao gerar a nuvem: ' + error.message); }
+  });
+  button.addEventListener('click', query);
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); query(); }
+  });
+  input.addEventListener('input', () => {
+    refreshIncludeButton();
+    showExpressionMessage('');
+    clearReport();
+    const state = availability();
+    if (!state.ok) showProblem(state.reason);
+    else setText(el('comparison-message'), '');
+  });
+  csvButton.addEventListener('click', guard(async () => {
+    if (!report) return;
+    const csv = NuvemArticleAnalysis.toCSV(report, [t('Artigo'), t('Consulta'), t('Ocorrências')]);
+    await saveBytes(slug() + '-por-artigo.csv', new TextEncoder().encode(csv));
+  }));
+  // Modo explícito: apenas quando marcado, o clique deixa de executar a exclusão original.
+  el('cloud').addEventListener('click', event => {
+    if (!clickMode.checked || clickMode.disabled) return;
+    const text = event.target.closest?.('text.word');
+    if (!text) return;
+    const texts = Array.from(el('cloud').querySelectorAll('text.word'));
+    const row = drawn[texts.indexOf(text)];
+    if (!row) return;
+    event.preventDefault(); event.stopPropagation();
+    selectWord(row);
+  }, true);
+  const frequencyBody = el('frequencies');
+  const compoundBody = el('compound-rows');
+  const observer = new MutationObserver(() => {
+    decorateRows();
+    if (input.value.trim()) query();
+  });
+  function decorateRows() {
+    observer.disconnect();
+    try {
+      const state = availability();
+      Array.from(frequencyBody.children).forEach((tr, index) => {
+        const row = frequencies[index];
+        if (!row) return;
+        let control = tr.querySelector('.comparison-word');
+        if (!control) {
+          const cell = document.createElementNS(htmlNS, 'td');
+          control = document.createElementNS(htmlNS, 'button');
+          control.setAttribute('type', 'button');
+          control.setAttribute('class', 'comparison-word');
+          control.setAttribute('data-i18n', 'Por artigo');
+          control.addEventListener('click', () => selectWord(row));
+          cell.appendChild(control); tr.appendChild(cell);
+        }
+        control.disabled = !state.ok;
+        setText(control, t('Por artigo'));
+      });
+      Array.from(compoundBody.children).forEach(tr => {
+        const expression = tr.children[0]?.textContent;
+        if (!expression) return;
+        let control = tr.querySelector('.comparison-compound');
+        if (!control) {
+          const cell = document.createElementNS(htmlNS, 'td');
+          control = document.createElementNS(htmlNS, 'button');
+          control.setAttribute('type', 'button');
+          control.setAttribute('class', 'comparison-compound');
+          control.setAttribute('data-i18n', 'Por artigo');
+          control.addEventListener('click', () => selectExpression(expression));
+          cell.appendChild(control); tr.appendChild(cell);
+        }
+        control.disabled = !state.ok;
+        setText(control, t('Por artigo'));
+      });
+    } finally {
+      observer.observe(frequencyBody, {childList:true, subtree:true});
+      observer.observe(compoundBody, {childList:true, subtree:true});
+    }
+  }
+  function refreshQuery() {
+    decorateRows();
+    const state = availability();
+    if (!state.ok) showProblem(state.reason);
+    else if (input.value.trim()) query();
+    else setText(el('comparison-message'), '');
+  }
+  for (const id of ['min-length','min-freq','pt','en','es','exclude','references','group','compounds','consume']) el(id).addEventListener('change', refreshQuery);
+  el('corpus').addEventListener('input', refreshQuery);
+  window.addEventListener('nuvem-languagechange', () => {
+    decorateRows();
+    if (expressionMessage) setText(el('expression-message'), t(expressionMessage));
+    if (report) renderReport();
+    else refreshQuery();
+  });
+  if (typeof DATA.comparisonQuery === 'string') input.value = DATA.comparisonQuery;
+  refreshQuery();
+})();
+
+
+===== ARQUIVO: content/article-analysis.js =====
+/* Consulta por artigo. Reutiliza NuvemCore; não altera seu algoritmo.
+   Textos não são duplicados: cada PDF guarda título e intervalo no corpus. */
+var NuvemArticleAnalysis = (() => {
+  const clean = value => NuvemCore.normalize(String(value || '').trim()).replace(/\s+/g, ' ').replace(/\s*\+\s*/g, ' + ');
+  // Verificação de alterações acidentais, não é uma assinatura de segurança.
+  function textHash(text) {
+    let a = 2166136261, b = 5381;
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      a = Math.imul(a ^ c, 16777619);
+      b = Math.imul(b, 33) ^ c;
+    }
+    return text.length + ':' + (a >>> 0).toString(16) + ':' + (b >>> 0).toString(16);
+  }
+  function sourceRecord(article, pdf, text, start) {
+    let title = '';
+    try { title = article.getField('title'); } catch (_) {}
+    const articleID = pdf.parentID || article.id || pdf.id;
+    return {
+      articleID, libraryID: pdf.libraryID, articleKey: article.key || String(articleID),
+      title: title || pdf.attachmentFilename || 'PDF',
+      pdfID: pdf.id, pdfKey: pdf.key || String(pdf.id),
+      pdf: pdf.attachmentFilename || '', start, end: start + text.length,
+      textHash: textHash(text)
+    };
+  }
+  function sources(payload, text) {
+    if (!Array.isArray(payload.documents) || !payload.documents.length) return {ok:false, reason:'missing'};
+    if (String(text) !== String(payload.text)) return {ok:false, reason:'edited'};
+    let cursor = 0;
+    const docs = [];
+    for (const record of payload.documents) {
+      if (!Number.isInteger(record.start) || !Number.isInteger(record.end) || record.start !== cursor
+        || record.end < record.start || record.end > text.length) return {ok:false, reason:'edited'};
+      const part = text.slice(record.start, record.end);
+      if (record.textHash !== textHash(part)) return {ok:false, reason:'edited'};
+      docs.push({...record, text:part});
+      cursor = record.end + 1;
+      if (record.end < text.length && text[record.end] !== '\f') return {ok:false, reason:'edited'};
+    }
+    if (cursor !== text.length + 1) return {ok:false, reason:'edited'};
+    return {ok:true, docs};
+  }
+  function target(query, options) {
+    const value = String(query || '').trim();
+    const tokens = value.match(/\p{L}[\p{L}\p{M}]*(?:[-’'][\p{L}\p{M}]+)*/gu) || [];
+    if (!value || /[\r\n\f]/.test(value) || !tokens.length) return {ok:false, reason:'query'};
+    const opts = {...NuvemCore.mergeOptions(options), minFreq:1};
+    if (tokens.length === 1 && !value.includes('+')) {
+      // Obtém a chave de agrupamento pelo próprio núcleo, sem copiar a regra de plural.
+      const probe = NuvemCore.countWords(tokens[0], {...opts, compounds:'', exclude:'', minLength:1});
+      return {ok:true, options:opts, key:probe.rows[0]?.key || NuvemCore.normalize(tokens[0]), label:value};
+    }
+    if (tokens.length < 2 || value.split('+').some(part => !/\p{L}/u.test(part))) return {ok:false, reason:'query'};
+    const lines = String(opts.compounds || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    let index = lines.findIndex(line => clean(line) === clean(value));
+    if (index < 0) { index = lines.length; lines.push(value); }
+    opts.compounds = lines.join('\n');
+    return {ok:true, options:opts, key:'expr:' + index, label:value};
+  }
+  function count(payload, text, query, options) {
+    const available = sources(payload, text);
+    if (!available.ok) return available;
+    const selected = target(query, options);
+    if (!selected.ok) return selected;
+    const articles = new Map();
+    let total = 0;
+    for (const doc of available.docs) {
+      const result = NuvemCore.countWords(doc.text, selected.options);
+      const occurrences = result.rows.find(row => row.key === selected.key)?.count || 0;
+      const id = doc.libraryID + ':' + (doc.articleID || doc.articleKey || doc.pdfID);
+      if (!articles.has(id)) articles.set(id, {
+        id, articleID:doc.articleID, articleKey:doc.articleKey, libraryID:doc.libraryID,
+        title:doc.title, count:0, pdfs:[]
+      });
+      const article = articles.get(id);
+      article.count += occurrences;
+      article.pdfs.push(doc.pdf);
+      total += occurrences;
+    }
+    return {ok:true, query:selected.label, key:selected.key, rows:Array.from(articles.values()), total, pdfCount:available.docs.length};
+  }
+  function toCSV(report, labels = ['Artigo','Consulta','Ocorrências']) {
+    const quote = value => '"' + String(value).replace(/"/g, '""') + '"';
+    const rows = [labels, ...report.rows.map(row => [row.title, report.query, row.count])];
+    return '\ufeff' + rows.map(row => row.map(quote).join(';')).join('\r\n');
+  }
+  return {textHash, sourceRecord, sources, target, count, toCSV};
+})();
+
+
+===== ARQUIVO: content/brand.css =====
+/* Identidade visual adicionada na 0.8.2; controles e layout originais preservados. */
+:root{--ink:#33282b;--muted:#716467;--border:#eadde0;--paper:#fff;--green:#c62828;--bg:#fff8f8}
+button,input,textarea,select{border-color:#e0cdd1!important}
+button:hover{background:#fff0f0}.primary:hover{background:#a91f24}
+input[type=range],input[type=checkbox]{accent-color:#c62828}
+#notice{background:#fff0ed}th{background:#fff6f6}th,td{border-bottom-color:#f0e3e5}
+.interface-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;font-size:12px}
+#about-panel{margin-top:20px;border-top:4px solid #c62828}
+[hidden]{display:none!important}
+@media(max-width:850px){header{flex-wrap:wrap}.workspace{grid-template-columns:1fr}main{padding:16px}}
+
+/* Caixa de idiomas própria: opções são botões HTML comuns. */
+.language-picker{position:relative}
+#interface-language{display:flex;align-items:center;gap:14px;min-width:118px;justify-content:space-between;background:#fff}
+.language-chevron{font-size:11px;color:var(--muted)}
+.language-options{position:absolute;right:0;top:calc(100% + 8px);z-index:50;width:260px;max-width:calc(100vw - 32px);padding:14px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 30px #38202426}
+#language-options-title{font-size:12px;font-weight:bold;color:var(--muted);margin:0 0 9px}
+.language-choices{display:grid;gap:5px}
+.language-choices button{width:100%;text-align:left;font-size:14px;display:flex;align-items:center;justify-content:space-between;padding:9px 12px}
+.language-choices button[aria-pressed=true]{background:#fff1f0;color:#9d2424;border-color:#d79898!important;font-weight:bold}
+.language-choices button[aria-pressed=true]::after{content:'✓';margin-left:12px}
+button:focus-visible{outline:2px solid #b52a2a;outline-offset:2px}
+
+.article-comparison{margin-top:20px;padding:18px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.article-comparison h2{margin-bottom:8px}
+.comparison-query-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:12px}
+.comparison-query-row>div{flex:1;min-width:220px}
+#comparison-query{width:100%;font:inherit;color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:9px;background:#fff}
+#comparison-title{color:var(--ink)}
+#comparison-summary{font-size:13px;font-weight:bold}
+#comparison-rows td:first-child{overflow-wrap:anywhere;min-width:160px}
+#comparison-rows td:nth-child(2){width:110px;font-variant-numeric:tabular-nums}
+#frequencies td:nth-child(3),#frequencies th:nth-child(3){text-align:right;width:110px}
+#frequencies td:nth-child(3) button{padding:4px 8px;font-size:12px}
+
+.export-picker{position:relative}
+.export-options{position:absolute;z-index:45;background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 8px 25px #38202426;top:calc(100% + 6px)}
+.export-options{right:0;width:220px}
+.export-options button{display:block;width:100%;text-align:left;margin:3px 0}
+#compound-rows td:nth-child(4),#compound-rows th:nth-child(4){text-align:right;width:110px}
+#compound-rows td:nth-child(4) button{padding:4px 8px;font-size:12px}
+#advanced-options{border-top:1px solid var(--border);padding-top:12px}
+#analysis-options{padding-top:8px}
+.compact-help{margin-top:18px;font-size:13px}
+
+/* Consulta e expressões reunidas; mantém os mesmos controles de filtros. */
+#comparison-expressions{margin-top:16px;padding-top:12px;border-top:1px solid var(--border)}
+#comparison-expressions textarea{max-width:100%}
+#expression-message{min-height:0}
+#expression-message:empty{display:none}
+.comparison-query-row button{max-width:100%}
+
+#expression-suggestions{margin:12px 0}
+#comparison-message:empty{display:none}
+
+
+===== ARQUIVO: content/cloud.js =====
+'use strict';
+/* Janela da ferramenta. Roda com permissões do Zotero, então grava arquivos
+   diretamente (FilePicker + IOUtils). Não há actors nem página remota. */
+const NS = 'http://www.w3.org/2000/svg';
+const $ = id => document.getElementById(id);
+const PREF = 'extensions.nuvem-palavras.defaults';
+const ARG = (() => { const a = window.arguments && window.arguments[0]; return a && (a.wrappedJSObject || a); })();
+
+let DATA;
+try {
+  DATA = JSON.parse(ARG.json);
+} catch (e) {
+  document.body.textContent = 'Não foi possível carregar os dados da nuvem: ' + e;
+  throw e;
+}
+
+let frequencies = [], drawn = [];
+
+function msg(text) { $('export-message').textContent = text; }
+function err(text) { $('error').textContent = text; }
+
+/* ---------- Opções ---------- */
+
+function getOptions() {
+  return {
+    limit: Number($('limit').value),
+    minLength: Math.max(1, Math.min(20, Number($('min-length').value) || 3)),
+    minFreq: Math.max(1, Math.min(9999, Number($('min-freq').value) || 1)),
+    languages: ['pt', 'en', 'es'].filter(x => $(x).checked),
+    exclude: $('exclude').value,
+    references: $('references').checked,
+    rotate: $('rotate').checked,
+    group: $('group').checked,
+    compounds: $('compounds').value,
+    consume: $('consume').checked
+  };
+}
+
+function applyOptions(o) {
+  o = NuvemCore.mergeOptions(o);
+  $('limit').value = String(Math.max(15, Math.min(150, Math.round((Number(o.limit) || 90) / 15) * 15)));
+  $('limit-value').textContent = $('limit').value;
+  $('min-length').value = o.minLength;
+  $('min-freq').value = o.minFreq;
+  $('exclude').value = o.exclude || '';
+  for (const l of ['pt', 'en', 'es']) $(l).checked = (o.languages || []).includes(l);
+  $('references').checked = !!o.references;
+  $('rotate').checked = !!o.rotate;
+  $('group').checked = !!o.group;
+  $('compounds').value = o.compounds || '';
+  $('consume').checked = o.consume !== false;
+}
+
+function savedDefaults() {
+  try { const s = Services.prefs.getStringPref(PREF, ''); return s ? JSON.parse(s) : null; }
+  catch (e) { return null; }
+}
+
+/* ---------- Desenho ---------- */
+
+function svgElement(tag, attrs = {}) {
+  const node = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  return node;
+}
+
+function removeCompoundLine(specIndex) {
+  let n = -1;
+  $('compounds').value = $('compounds').value.split(/\r?\n/).filter(line => {
+    if (!line.trim()) return true;
+    n++;
+    return n !== specIndex;
+  }).join('\n');
+}
+
+function drawCloud(words) {
+  const svg = $('cloud');
+  svg.replaceChildren();
+  const title = svgElement('title');
+  title.textContent = 'Nuvem de palavras: ' + DATA.title;
+  svg.appendChild(title);
+  svg.appendChild(svgElement('rect', { width: 1200, height: 720, fill: '#ffffff' }));
+  words.forEach((w, i) => {
+    const g = svgElement('g', { transform: `translate(${w.x.toFixed(2)} ${w.y.toFixed(2)})${w.vertical ? ' rotate(-90)' : ''}` });
+    const t = svgElement('text', {
+      'text-anchor': 'middle', x: 0, y: (w.size * .34).toFixed(2),
+      textLength: w.glyphWidth.toFixed(2), lengthAdjust: 'spacingAndGlyphs',
+      'font-family': 'Arial, sans-serif', 'font-weight': 700, 'font-size': w.size,
+      fill: NuvemCore.colorOf(w, i), class: 'word'
+    });
+    t.textContent = w.word;
+    const tip = svgElement('title');
+    tip.textContent = `${w.word}: ${w.count} ocorrências. ` + (w.compound ? 'Clique para remover a expressão.' : 'Clique para ignorar.');
+    t.appendChild(tip);
+    t.addEventListener('click', () => {
+      if (w.compound) removeCompoundLine(w.specIndex);
+      else {
+        const before = $('exclude').value.trim();
+        $('exclude').value = before ? before + ', ' + w.word : w.word;
+      }
+      render();
+    });
+    g.appendChild(t);
+    svg.appendChild(g);
+  });
+  if (!words.length) {
+    const empty = svgElement('text', { x: 600, y: 355, 'text-anchor': 'middle', fill: '#647a78', 'font-family': 'Arial, sans-serif', 'font-size': 22 });
+    empty.textContent = 'Nenhuma palavra passou pelos filtros.';
+    svg.appendChild(empty);
+  }
+}
+
+function cell(tr, text) {
+  const td = document.createElement('td');
+  td.textContent = String(text);
+  tr.appendChild(td);
+}
+
+function render() {
+  const options = getOptions();
+  const result = NuvemCore.countWords($('corpus').value, options);
+  frequencies = result.rows;
+  drawn = NuvemCore.cloudLayout(NuvemCore.pickRows(frequencies, options.limit), options.rotate, document);
+  drawCloud(drawn);
+  $('status').textContent = `${result.total.toLocaleString('pt-BR')} palavras no texto analisado · ${frequencies.length.toLocaleString('pt-BR')} termos após os filtros · ${drawn.length} palavras na nuvem`;
+  const expected = Math.min(options.limit, frequencies.length);
+  const notes = [
+    result.cut ? 'A seção final de referências foi retirada por reconhecimento do título. Desmarque a opção para incluir o texto completo.' : '',
+    !drawn.length ? 'Reduza a frequência mínima ou revise o texto para obter resultados.' : '',
+    drawn.length && drawn.length < expected ? 'Algumas palavras não couberam na imagem. Suas frequências continuam disponíveis no CSV.' : ''
+  ].filter(Boolean);
+  $('notice').textContent = notes.join(' ');
+  $('notice').hidden = notes.length === 0;
+
+  const body = $('frequencies');
+  body.replaceChildren();
+  for (const row of frequencies.slice(0, 500)) {
+    const tr = document.createElement('tr');
+    cell(tr, row.word);
+    cell(tr, row.count);
+    body.appendChild(tr);
+  }
+
+  const cbody = $('compound-rows');
+  cbody.replaceChildren();
+  $('compound-panel').hidden = result.compounds.length === 0;
+  for (const c of result.compounds) {
+    const tr = document.createElement('tr');
+    cell(tr, c.label);
+    cell(tr, c.count);
+    cell(tr, c.forms.map(([f, n]) => `${f} (${n})`).join(', '));
+    cbody.appendChild(tr);
+  }
+
+  for (const id of ['jpg-export', 'png-export', 'svg-export', 'csv-export']) $(id).disabled = frequencies.length === 0;
+  err('');
+}
+
+function slug() {
+  return NuvemCore.normalize(DATA.title).replace(/[^a-z0-9]+/g, '-').slice(0, 80).replace(/^-|-$/g, '') || 'artigo';
+}
+
+/* ---------- Salvamento de arquivos ---------- */
+
+async function pickPath(name, ext) {
+  let FilePicker = null;
+  try {
+    ({ FilePicker } = ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs'));
+  } catch (e) { console.error('[Nuvem] FilePicker do Zotero indisponível, usando o do sistema', e); }
+  if (FilePicker) {
+    const fp = new FilePicker();
+    fp.init(window, 'Salvar ' + ext.toUpperCase(), fp.modeSave);
+    fp.appendFilter(ext.toUpperCase(), '*.' + ext);
+    fp.defaultString = name;
+    fp.defaultExtension = ext;
+    const answer = await fp.show();
+    return (answer === fp.returnOK || answer === fp.returnReplace) ? fp.file : null;
+  }
+  const nfp = Components.classes['@mozilla.org/filepicker;1'].createInstance(Components.interfaces.nsIFilePicker);
+  nfp.init(window.browsingContext, 'Salvar ' + ext.toUpperCase(), Components.interfaces.nsIFilePicker.modeSave);
+  nfp.appendFilter(ext.toUpperCase(), '*.' + ext);
+  nfp.defaultString = name;
+  nfp.defaultExtension = ext;
+  const rv = await new Promise(resolve => nfp.open(resolve));
+  const ok = rv === Components.interfaces.nsIFilePicker.returnOK || rv === Components.interfaces.nsIFilePicker.returnReplace;
+  return ok ? nfp.file.path : null;
+}
+
+async function saveBytes(name, bytes) {
+  const ext = name.split('.').pop().toLowerCase();
+  const safeName = name.replace(/[\\/:*?"<>|]/g, '-');
+  msg('Escolha onde salvar o arquivo…');
+  const path = await pickPath(safeName, ext);
+  if (!path) { msg('Salvamento cancelado.'); return; }
+  await IOUtils.write(path, bytes);
+  msg('Arquivo salvo em: ' + path);
+}
+
+function guard(fn) {
+  return async () => {
+    try { await fn(); }
+    catch (e) { console.error('[Nuvem]', e); msg('Não foi possível concluir: ' + (e && e.message || e)); }
+  };
+}
+
+function svgSource() {
+  const clone = $('cloud').cloneNode(true);
+  clone.setAttribute('xmlns', NS);
+  clone.setAttribute('width', '1200');
+  clone.setAttribute('height', '720');
+  return '<?xml version="1.0" encoding="UTF-8"?>' + new XMLSerializer().serializeToString(clone);
+}
+
+function exportImage(format) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = 2400; c.height = 1440;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob(async blob => {
+          try {
+            if (!blob) throw new Error('Não foi possível gerar a imagem.');
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            await saveBytes(slug() + '-nuvem.' + (format === 'jpeg' ? 'jpg' : 'png'), bytes);
+            resolve();
+          } catch (e) { reject(e); }
+        }, 'image/' + format, .95);
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('Não foi possível renderizar a imagem.'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgSource());
+  });
+}
+
+$('csv-export').addEventListener('click', guard(async () => {
+  const quote = s => '"' + String(s).replace(/"/g, '""') + '"';
+  const csv = '\ufeffPalavra;Ocorrências\r\n' + frequencies.map(r => quote(r.word) + ';' + r.count).join('\r\n');
+  await saveBytes(slug() + '-frequencias.csv', new TextEncoder().encode(csv));
+}));
+$('svg-export').addEventListener('click', guard(async () => {
+  await saveBytes(slug() + '-nuvem.svg', new TextEncoder().encode(svgSource()));
+}));
+$('png-export').addEventListener('click', guard(() => exportImage('png')));
+$('jpg-export').addEventListener('click', guard(() => exportImage('jpeg')));
+
+/* ---------- Gravar no Zotero / padrões ---------- */
+
+$('save-zotero').hidden = false;
+$('save-zotero').addEventListener('click', async () => {
+  const btn = $('save-zotero'), label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Gravando…';
+  msg('Gravando no Zotero…');
+  console.log('[Nuvem] clique em Salvar no Zotero');
+  let text;
+  try {
+    if (!ARG || !ARG.save) throw new Error('esta janela não está ligada ao plugin. Feche e abra a nuvem de novo pelo Zotero.');
+    const payload = { ...DATA, text: $('corpus').value, options: getOptions() };
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('o Zotero não respondeu em 20 segundos.')), 20000));
+    text = await Promise.race([ARG.save(JSON.stringify(payload)), timeout]);
+    if (typeof text !== 'string') text = 'Concluído, mas o Zotero não enviou confirmação.';
+  } catch (e) {
+    console.error('[Nuvem]', e);
+    text = 'Não foi possível gravar no Zotero: ' + (e && e.message || e);
+  }
+  btn.disabled = false;
+  btn.textContent = label;
+  msg(text);
+  try { Services.prompt.alert(window, 'Nuvem de palavras', text); } catch (e) { /* mensagem já exibida na tela */ }
+});
+
+$('save-defaults').addEventListener('click', guard(async () => {
+  Services.prefs.setStringPref(PREF, JSON.stringify(getOptions()));
+  msg('Ajustes salvos como padrão para as próximas nuvens.');
+}));
+$('reset-defaults').addEventListener('click', guard(async () => {
+  try { Services.prefs.clearUserPref(PREF); } catch (e) { /* já estava limpo */ }
+  applyOptions(NuvemCore.defaults());
+  render();
+  msg('Ajustes de fábrica restaurados.');
+}));
+
+/* ---------- Sugestões de expressões ---------- */
+
+$('suggest').addEventListener('click', guard(async () => {
+  const box = $('suggestions');
+  box.replaceChildren();
+  const existing = new Set($('compounds').value.split(/\r?\n/).map(l => NuvemCore.normalize(l.trim())));
+  const list = NuvemCore.suggestPhrases($('corpus').value, getOptions(), 30)
+    .filter(p => !existing.has(NuvemCore.normalize(p.phrase)));
+  if (!list.length) { box.textContent = 'Nenhuma sugestão encontrada com os filtros atuais.'; return; }
+  for (const p of list) {
+    const b = document.createElement('button');
+    b.textContent = `${p.phrase} (${p.count})`;
+    b.addEventListener('click', () => {
+      const cur = $('compounds').value.replace(/\s+$/, '');
+      $('compounds').value = cur ? cur + '\n' + p.phrase : p.phrase;
+      b.remove();
+      render();
+    });
+    box.appendChild(b);
+  }
+}));
+
+/* ---------- Controles ---------- */
+
+$('limit').addEventListener('input', () => { $('limit-value').textContent = $('limit').value; });
+$('limit').addEventListener('change', () => render());
+$('generate').addEventListener('click', () => {
+  try { render(); } catch (e) { err('Erro ao gerar a nuvem: ' + e.message); }
+});
+
+/* ---------- Início ---------- */
+
+$('article-title').textContent = DATA.title;
+$('source').textContent = 'PDF: ' + DATA.pdf;
+$('coverage').textContent = DATA.coverage;
+$('corpus').value = DATA.text;
+document.title = 'Nuvem · ' + DATA.title;
+applyOptions(DATA.options ? DATA.options : savedDefaults());
+try { render(); } catch (e) { err('Erro ao gerar a nuvem: ' + e.message); }
+
+
+===== ARQUIVO: content/cloud.xhtml =====
+<?xml version='1.0' encoding='UTF-8'?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="pt-BR">
+<head>
+<title>Nuvem de palavras do artigo</title>
+<style>
+:root{--ink:#183c39;--muted:#647a78;--border:#dce5df;--paper:#fff;--green:#256e5d;--bg:#f3f5ef}
+*{box-sizing:border-box}
+html{height:100%}
+body{margin:0;height:100%;overflow:auto;background:var(--bg);color:var(--ink);font:15px/1.5 Arial,sans-serif}
+main{max-width:1400px;margin:auto;padding:28px}
+header{margin-bottom:22px;display:flex;gap:24px;align-items:flex-start;justify-content:space-between}
+.eyebrow{text-transform:uppercase;font-size:11px;letter-spacing:2px;font-weight:bold;color:var(--green)}
+h1{font-size:26px;line-height:1.2;margin:9px 0 10px;max-width:950px}
+h2{font-size:17px;margin:0 0 15px}
+p{margin:7px 0}
+.muted{color:var(--muted);font-size:13px}
+.badge{white-space:nowrap;border:1px solid #c8d9ce;padding:6px 10px;border-radius:20px;font-size:12px}
+.workspace{display:grid;grid-template-columns:255px minmax(0,1fr);gap:20px}
+.panel{background:var(--paper);border:1px solid var(--border);border-radius:16px;padding:22px}
+label.field{display:block;font-size:12px;font-weight:bold;margin:18px 0 6px}
+input[type=number],textarea{width:100%;font:inherit;color:var(--ink);border:1px solid #cdd9d0;border-radius:8px;background:#fff;padding:9px}
+textarea{resize:vertical;font-size:13px;line-height:1.5}
+.checks{display:flex;flex-wrap:wrap;gap:10px;font-size:13px}
+.check{display:flex;gap:7px;align-items:flex-start;margin:14px 0;font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{font:inherit;border-radius:8px;padding:9px 14px;border:1px solid #cdd9d0;background:white;color:var(--ink);cursor:pointer;font-size:13px}
+button:hover{background:#edf3ee}
+button:disabled{opacity:.45;cursor:default}
+.primary{background:var(--green);color:white;border-color:var(--green);width:100%;margin-top:18px;font-weight:bold}
+.primary:hover{background:#195343}
+.visual{min-width:0}
+.visualhead{display:flex;gap:12px;justify-content:space-between;align-items:center;margin-bottom:5px;flex-wrap:wrap}
+.actions{display:flex;gap:7px;flex-wrap:wrap}
+#cloud{width:100%;height:auto;background:#fff;display:block}
+.word{cursor:pointer}
+.word:hover{opacity:.65}
+#status{min-height:22px;font-size:12px;color:var(--muted)}
+#export-message{min-height:20px;font-weight:bold}
+#notice{background:#f5f1e4;padding:10px 13px;border-radius:7px;font-size:12px;margin-top:10px}
+details{margin-top:22px}
+summary{cursor:pointer;font-weight:bold;font-size:13px;margin-bottom:12px}
+.tablewrap{max-height:280px;overflow:auto;margin-top:15px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #e9eee8}
+th{position:sticky;top:0;background:#f6f8f3}
+td:nth-child(2),th:nth-child(2){text-align:right}
+footer{font-size:12px;color:var(--muted);margin-top:20px}
+.small{font-size:12px}
+.row{display:flex;gap:8px;margin-top:10px}
+.row button{flex:1;padding:8px 6px;font-size:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chips button{padding:5px 10px}
+#compound-panel{margin-top:18px}
+#compound-panel td:nth-child(3),#compound-panel th:nth-child(3){text-align:left;color:var(--muted)}
+#error{color:#a3322a;font-size:13px;margin-top:10px}
+#corpus{min-height:220px}
+</style>
+<link rel="stylesheet" href="brand.css"/>
+</head>
+<body id="nuvem-interface-root">
+<main>
+<header>
+  <div>
+    <div class="eyebrow">Nuvem de Palavras Z</div>
+    <h1 id="article-title"/>
+    <p class="muted" id="source"/>
+    <p class="muted" id="coverage"/>
+  </div>
+  <div class="interface-tools"><label data-i18n="Idioma da interface" id="interface-language-label">Idioma da interface</label>
+<div class="language-picker" id="language-picker"><button id="interface-language" type="button" aria-haspopup="dialog" aria-controls="language-options" aria-expanded="false" aria-labelledby="interface-language-label current-language"><span id="current-language">Português</span><span aria-hidden="true" class="language-chevron">▾</span></button><div id="language-options" class="language-options" role="dialog" aria-labelledby="language-options-title" hidden="hidden"><p id="language-options-title" data-i18n="Idioma da interface">Idioma da interface</p><div class="language-choices"><button type="button" data-language="pt-BR" lang="pt-BR" aria-pressed="true">Português</button><button type="button" data-language="en" lang="en" aria-pressed="false">English</button><button type="button" data-language="es" lang="es" aria-pressed="false">Español</button><button type="button" data-language="fr" lang="fr" aria-pressed="false">Français</button><button type="button" data-language="de" lang="de" aria-pressed="false">Deutsch</button><button type="button" data-language="zh-CN" lang="zh-CN" aria-pressed="false">简体中文</button><button type="button" data-language="ja" lang="ja" aria-pressed="false">日本語</button></div></div></div>
+<button data-i18n="Ajuda" id="help-open" type="button">Ajuda</button><button id="about-open" type="button" data-i18n="Sobre">Sobre</button></div>
+</header>
+<div class="workspace">
+<aside class="panel">
+<h2 data-i18n="Ajustar a nuvem">Ajustar a nuvem</h2>
+<label class="field" for="limit" data-i18n="Quantidade de palavras">Quantidade de palavras</label>
+<input id="limit" type="range" min="15" max="150" step="15" value="90" style="width:100%"/>
+<p class="small"><output id="limit-value">90</output><span data-i18n="palavras · de 15 a 150"> palavras · de 15 a 150</span></p>
+<div class="grid2">
+  <div><label class="field" for="min-length" data-i18n="Mín. de letras">Mín. de letras</label><input id="min-length" type="number" min="1" max="20" value="3"/></div>
+  <div><label class="field" for="min-freq" data-i18n="Mín. de ocorrências">Mín. de ocorrências</label><input id="min-freq" type="number" min="1" max="9999" value="2"/></div>
+</div>
+<label class="field" data-i18n="Ignorar palavras comuns">Ignorar palavras comuns</label>
+<div class="checks">
+  <label><input id="pt" type="checkbox" checked="checked"/><span data-i18n="Português"> Português</span></label>
+  <label><input id="en" type="checkbox" checked="checked"/><span data-i18n="Inglês"> Inglês</span></label>
+  <label><input id="es" type="checkbox"/><span data-i18n="Espanhol"> Espanhol</span></label>
+</div>
+<label class="field" for="exclude" data-i18n="Outras palavras para ignorar">Outras palavras para ignorar</label>
+<textarea id="exclude" rows="4" placeholder="Ex.: artigo, estudo, autor"/>
+<label class="check"><input id="references" type="checkbox" checked="checked"/><span data-i18n="Excluir referências" title="Excluir a seção final de referências quando houver um título reconhecível." data-i18n-title="Excluir a seção final de referências quando houver um título reconhecível.">Excluir referências</span></label>
+<label class="check"><input id="group" type="checkbox"/><span data-i18n="Agrupar singular e plural (dado / dados)">Agrupar singular e plural (dado / dados)</span></label>
+<button id="generate" class="primary" data-i18n="Atualizar nuvem">Atualizar nuvem</button>
+<div id="error" role="alert"/>
+<label class="check"><input id="rotate" type="checkbox"/><span data-i18n="Incluir palavras na vertical">Incluir palavras na vertical</span></label>
+<div class="row"><button id="save-defaults" title="Guarda filtros, palavras ignoradas e expressões para as próximas nuvens" data-i18n="Salvar como padrão" data-i18n-title="Guarda filtros, palavras ignoradas e expressões para as próximas nuvens">Salvar como padrão</button><button id="reset-defaults" data-i18n="Restaurar">Restaurar</button></div>
+</aside>
+<section class="panel visual">
+<div class="visualhead">
+  <h2 style="margin:0" data-i18n="Palavras mais frequentes">Palavras mais frequentes</h2>
+  <div class="actions">
+    <button id="save-zotero" hidden="hidden" title="Grava estes ajustes no anexo da nuvem" data-i18n="Salvar no Zotero" data-i18n-title="Grava estes ajustes no anexo da nuvem">Salvar no Zotero</button>
+    <div id="export-picker" class="export-picker"><button data-i18n="Exportar" id="export-open" type="button" aria-haspopup="dialog" aria-controls="export-options" aria-expanded="false">Exportar</button><div id="export-options" class="export-options" role="dialog" aria-label="Exportar" data-i18n-aria-label="Exportar" hidden="hidden"><button id="jpg-export" data-i18n="Imagem JPG" type="button">Imagem JPG</button>
+    <button id="png-export" data-i18n="Imagem PNG" type="button">Imagem PNG</button>
+    <button id="svg-export" data-i18n="Imagem SVG" type="button">Imagem SVG</button>
+    <button id="csv-export" data-i18n="Frequências CSV" type="button">Frequências CSV</button>
+  <button id="comparison-csv" type="button" disabled="disabled" data-i18n="Contagem por artigo CSV">Contagem por artigo CSV</button></div></div></div>
+</div>
+<p id="status"/>
+<p id="export-message" class="muted" role="status"/>
+<svg xmlns="http://www.w3.org/2000/svg" id="cloud" viewBox="0 0 1200 720" role="img" aria-label="Nuvem de palavras do artigo" data-i18n-aria-label="Nuvem de palavras do artigo"/>
+<div id="notice" hidden="hidden"/>
+<section id="article-comparison" class="article-comparison" aria-labelledby="comparison-title">
+<h2 id="comparison-title" data-i18n="Consulta por artigo">Consulta por artigo</h2>
+<p class="muted" data-i18n="Consulte uma palavra ou expressão e veja as ocorrências em cada artigo, incluindo zero.">Consulte uma palavra ou expressão e veja as ocorrências em cada artigo, incluindo zero.</p>
+<div class="comparison-query-row"><div><label class="field" for="comparison-query" data-i18n="Palavra ou expressão">Palavra ou expressão</label>
+<input id="comparison-query" type="text" placeholder="Ex.: dados ou proteção de dados" data-i18n-placeholder="Ex.: dados ou proteção de dados"/></div>
+<button id="comparison-run" type="button" data-i18n="Consultar por artigo">Consultar por artigo</button>
+<button data-i18n="Incluir expressão na nuvem" id="comparison-include" type="button" disabled="disabled">Incluir expressão na nuvem</button></div>
+<details id="expression-suggestions"><summary data-i18n="Sugerir expressões frequentes">Sugerir expressões frequentes</summary>
+<p class="muted" data-i18n="Pares e trios de palavras que aparecem juntos com frequência no texto. Clique numa sugestão para adicioná-la à lista de expressões.">Pares e trios de palavras que aparecem juntos com frequência no texto. Clique numa sugestão para adicioná-la à lista de expressões.</p>
+<button id="suggest" data-i18n="Calcular sugestões">Calcular sugestões</button><div id="suggestions" class="chips"/></details>
+<label class="check"><input id="comparison-cloud-mode" type="checkbox"/><span data-i18n="Clique na nuvem para consultar por artigo">Clique na nuvem para consultar por artigo</span></label>
+<p id="expression-message" class="muted" role="status"/><p id="comparison-message" class="muted" role="status"/>
+<p id="comparison-summary"/>
+<div id="comparison-table-wrap" class="tablewrap" hidden="hidden"><table><thead><tr><th data-i18n="Artigo">Artigo</th><th data-i18n="Ocorrências">Ocorrências</th></tr></thead><tbody id="comparison-rows"/></table></div>
+<details id="comparison-expressions"><summary data-i18n="Expressões incluídas na nuvem">Expressões incluídas na nuvem</summary><label data-i18n="Uma expressão por linha" class="field" for="compounds">Uma expressão por linha</label><textarea id="compounds" rows="4" placeholder="proteção de dados&#10;direito + memória"/>
+<label class="check"><input id="consume" type="checkbox" checked="checked"/><span data-i18n="Não contar de novo as palavras soltas que fazem parte das expressões.">Não contar de novo as palavras soltas que fazem parte das expressões.</span></label>
+<button data-i18n="Aplicar expressões" id="comparison-apply" type="button">Aplicar expressões</button><div id="compound-panel" hidden="hidden"><h2 data-i18n="Ocorrências das expressões na seleção">Ocorrências das expressões na seleção</h2>
+<div class="tablewrap"><table><thead><tr><th data-i18n="Expressão">Expressão</th><th data-i18n="Ocorrências">Ocorrências</th><th data-i18n="Formas encontradas">Formas encontradas</th><th data-i18n="Por artigo">Por artigo</th></tr></thead><tbody id="compound-rows"/></table></div></div>
+</details></section><details><summary data-i18n="Ver tabela de frequências">Ver tabela de frequências</summary>
+<p class="muted" data-i18n="Todas as palavras que passam pelos filtros, em ordem de frequência. A tabela mostra as primeiras 500; o CSV contém todas.">Todas as palavras que passam pelos filtros, em ordem de frequência. A tabela mostra as primeiras 500; o CSV contém todas.</p>
+<div class="tablewrap"><table><thead><tr><th data-i18n="Palavra">Palavra</th><th data-i18n="Ocorrências">Ocorrências</th><th data-i18n="Por artigo">Por artigo</th></tr></thead><tbody id="frequencies"/></table></div></details>
+</section>
+</div>
+<footer data-i18n="O tamanho das palavras representa sua frequência no texto.">O tamanho das palavras representa sua frequência no texto.</footer>
+<section id="about-panel" class="panel" hidden="hidden" aria-labelledby="about-title">
+<h2 id="about-title" data-i18n="Sobre">Sobre</h2><p><strong>Nuvem de Palavras Z</strong></p>
+<p data-i18n="Versão 0.9.4 · 01/10/2026">Versão 0.9.4 · 01/10/2026</p><p data-i18n="Autor: Victor Hugo Levindo">Autor: Victor Hugo Levindo</p>
+<p data-i18n="Compatível com Zotero 10.">Compatível com Zotero 10.</p>
+<h3 data-i18n="Função">Função</h3><p data-i18n="Cria nuvens de palavras de um ou mais PDFs no Zotero. Ajuste os filtros na lateral, consulte palavras ou expressões por artigo e use as sugestões abaixo da busca. Inclua expressões na nuvem e use + para aceitar preposições, artigos e contrações entre os termos. Salve os ajustes no Zotero ou exporte imagens e dados.">Cria nuvens de palavras de um ou mais PDFs no Zotero. Ajuste os filtros na lateral, consulte palavras ou expressões por artigo e use as sugestões abaixo da busca. Inclua expressões na nuvem e use + para aceitar preposições, artigos e contrações entre os termos. Salve os ajustes no Zotero ou exporte imagens e dados.</p><p data-i18n="Idiomas da interface: português, inglês, espanhol, francês, alemão, chinês e japonês. Os filtros de palavras são configurados separadamente.">Idiomas da interface: português, inglês, espanhol, francês, alemão, chinês e japonês. Os filtros de palavras são configurados separadamente.</p>
+<button id="about-close" type="button" data-i18n="Fechar">Fechar</button></section>
+<section id="help-panel" class="panel compact-help" hidden="hidden" aria-labelledby="help-title"><h2 data-i18n="Ajuda" id="help-title">Ajuda</h2><p data-i18n="Na Consulta por artigo, digite uma palavra ou expressão. As sugestões frequentes ficam logo abaixo da busca. Use Incluir expressão na nuvem para adicioná-la à lista e Aplicar expressões após editar a lista. Salvar no Zotero grava os ajustes no anexo; Salvar como padrão define os ajustes das próximas nuvens. A opção de palavras na vertical e Restaurar ficam na lateral." class="muted">Na Consulta por artigo, digite uma palavra ou expressão. As sugestões frequentes ficam logo abaixo da busca. Use Incluir expressão na nuvem para adicioná-la à lista e Aplicar expressões após editar a lista. Salvar no Zotero grava os ajustes no anexo; Salvar como padrão define os ajustes das próximas nuvens. A opção de palavras na vertical e Restaurar ficam na lateral.</p><p class="muted" data-i18n="Separe por vírgula ou linha. Clique numa palavra da nuvem para ignorá-la.">Separe por vírgula ou linha. Clique numa palavra da nuvem para ignorá-la.</p>
+<p class="muted" data-i18n="Sem +, a expressão segue a sequência escrita. Com +, aceita zero ou mais preposições, artigos e contrações entre os termos, na mesma ordem: direito + memória encontra direito à memória; proteção + dados encontra proteção de dados, dos dados e para os dados. O + não atravessa pontuação nem substitui palavras de conteúdo.">Sem +, a expressão segue a sequência escrita. Com +, aceita zero ou mais preposições, artigos e contrações entre os termos, na mesma ordem: direito + memória encontra direito à memória; proteção + dados encontra proteção de dados, dos dados e para os dados. O + não atravessa pontuação nem substitui palavras de conteúdo.</p>
+<p class="muted" data-i18n="Com essa opção desmarcada, clicar na nuvem continua excluindo a palavra. Você também pode usar Por artigo na tabela de frequências.">Com essa opção desmarcada, clicar na nuvem continua excluindo a palavra. Você também pode usar Por artigo na tabela de frequências.</p>
+<p class="muted" data-i18n="A consulta usa os filtros atuais. O mínimo de ocorrências e o limite da nuvem não escondem contagens de zero ou uma ocorrência por artigo.">A consulta usa os filtros atuais. O mínimo de ocorrências e o limite da nuvem não escondem contagens de zero ou uma ocorrência por artigo.</p>
+<p data-i18n="O tamanho das palavras representa sua frequência no texto. A nuvem não identifica a importância conceitual dos termos. Maiúsculas e variantes com/sem acento são contadas juntas; formas no singular e plural permanecem separadas. Texto em colunas, cabeçalhos e extração de PDF podem afetar os resultados.">O tamanho das palavras representa sua frequência no texto. A nuvem não identifica a importância conceitual dos termos. Maiúsculas e variantes com/sem acento são contadas juntas; formas no singular e plural permanecem separadas. Texto em colunas, cabeçalhos e extração de PDF podem afetar os resultados.</p><button data-i18n="Fechar" id="help-close" type="button">Fechar</button></section></main>
+<textarea id="corpus" spellcheck="false" aria-label="Texto do artigo" hidden="hidden" readonly="readonly" aria-hidden="true" tabindex="-1"/>
+<script src="core.js"/>
+<script src="article-analysis.js"/><script src="theme.js"/>
+<script src="cloud.js"/>
+<script src="translations.js"/>
+<script src="interface.js"/>
+<script src="article-analysis-ui.js"/><script src="simple-interface.js"/></body>
+</html>
+
+===== ARQUIVO: content/core.js =====
+/* Lógica compartilhada: contagem, filtros, posicionamento e SVG.
+   Carregado pelo plugin (loadSubScript) e pela janela da ferramenta (<script src>). */
+var NuvemCore = (() => {
+const normalize = w => w.toLocaleLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+const STOPS = {
+pt:`a à às ao aos as o os um uma uns umas de da das do dos em na nas no nos num numa para por pelo pela pelos pelas com sem sob sobre entre até após ante antes depois durante contra desde e ou mas nem que se caso como quando onde enquanto porque pois portanto porém contudo entretanto então também apenas ainda já muito muitos muita muitas mais menos pouco poucos pouca poucas todo todos toda todas outro outros outra outras qual quais qualquer cada algum alguns alguma algumas nenhum nenhuma este esta estes estas esse essa esses essas aquele aquela aqueles aquelas isto isso aquilo aqui ali lá eu tu ele ela eles elas nós vós vocês você me te lhe lhes nos vos meu minha meus minhas teu tua seus sua suas seu nosso nossa nossos nossas ter tem têm temos tinha tinham tive teve sido ser sou somos são é era eram foi foram será serão seja sejam estar está estão estava estavam estiver estou estamos há houve houver haver fazer faz fazem feito pode podem poderia poderão deve devem deveria vai vão ir vamos tanto quanto mesmo mesma mesmos mesmas próprio própria tais cujo cuja cujos cujas dessa desse desta deste naquele naquela assim vez vezes si não sim bem além através segundo mediante`,
+en:`a an the and or but if then else when where while so because therefore however thus also just only very more most less least many much few several each all any some no none other another this that these those it its itself he his him she her hers they them their theirs themselves we us our ours you your yours yourself i me my mine is are was were be been being am do does did done doing have has had having can could may might must shall should will would not nor of in on at by to from for with without within into onto out about above below between among during before after since until through over under up down as than such both either neither which who whom whose what how why there here now then again once always often sometimes further own same against via per et al`,
+es:`el la los las un una unos unas de del en al a con por para sin sobre entre y o pero que como cuando donde porque pues también muy más menos todo todos toda todas otro otros otra otras este esta estos estas ese esa esos esas aquel aquella aquellos aquellas esto eso aquello es son era eran fue fueron ser sido estar está están estaba estaban hay ha han haber tiene tienen tener puede pueden se su sus lo le les nos me te usted ustedes nosotros nuestra nuestro no sí ya así cada algún alguna algunos algunas ningún ninguna cual cuales quien quienes tanto cuanto después antes durante desde hasta`};
+const COLORS = ['#245e52','#348775','#407c91','#af733c','#637744','#614e71','#335d70'];
+
+
+const COMPOUND_COLOR = '#b3261e';
+// + aceita preposições, artigos e contrações; normalização inclui à/às/até/após.
+const CONNECTORS = new Set('a ante apos ate com contra de desde em entre para perante por sem sob sobre tras afora conforme consoante durante exceto fora mediante menos salvo segundo senão visto e o as os um uma uns umas ao aos da das do dos na nas no nos num numa nuns numas dum duma duns dumas pelo pela pelos pelas deste desta destes destas desse dessa desses dessas daquele daquela daqueles daquelas neste nesta nestes nestas nesse nessa nesses nessas naquele naquela naqueles naquelas disto disso daquilo nisto nisso naquilo of the and in for to'.split(' ').map(normalize));
+
+const defaults = () => ({ limit: 90, minLength: 3, minFreq: 2, languages: ['pt','en'], exclude: '', references: true, rotate: false, group: false, compounds: '', consume: true });
+const mergeOptions = saved => ({ ...defaults(), ...(saved || {}) });
+
+const TOKEN = /\p{L}[\p{L}\p{M}]*(?:[-’'][\p{L}\p{M}]+)*/gu;
+function tokenize(src) {
+  const out = [];
+  for (const m of src.matchAll(TOKEN)) out.push({ w: m[0], n: normalize(m[0]), s: m.index, e: m.index + m[0].length });
+  return out;
+}
+
+function stripReferences(text, enabled) {
+  if (!enabled) return { text, cut: false };
+  const heading = /(?:^|\n)[ \t]*(?:\d+[.)]?\s+)?(?:refer[eê]ncias(?:\s+bibliogr[aá]ficas)?|references|bibliograf[ií]a|bibliography)[ \t]*\r?\n/gi;
+  let found, chosen;
+  while ((found = heading.exec(text))) if (found.index > text.length * 0.55) chosen = found;
+  return chosen ? { text: text.slice(0, chosen.index), cut: true } : { text, cut: false };
+}
+
+// Prepara um documento: corta referências, junta hifenização e põe em minúsculas.
+function prepare(doc, references) {
+  const cleaned = stripReferences(doc, references);
+  const source = cleaned.text
+    .replace(/(\p{L})[-\u00ad‐][ \t]*\r?\n[ \t]*(?=\p{L})/gu, '$1')
+    .replace(/\u00ad/g, '')
+    .toLocaleLowerCase();
+  return { source, cut: cleaned.cut };
+}
+
+// Agrupa singular e plural de forma simples (dados/dado, informações/informação).
+function stem(k, ptes, en) {
+  if (k.length <= 3) return k;
+  if (ptes && k.endsWith('oes')) return k.slice(0, -3) + 'ao';
+  if (en && !ptes && k.length > 4 && k.endsWith('ies')) return k.slice(0, -3) + 'y';
+  if (ptes && k.length > 5 && k.endsWith('ais')) return k.slice(0, -3) + 'al';
+  if (ptes && k.length > 5 && k.endsWith('eis')) return k.slice(0, -3) + 'el';
+  if (ptes && k.length > 4 && k.endsWith('ns')) return k.slice(0, -2) + 'm';
+  if (ptes && k.length > 5 && (k.endsWith('res') || k.endsWith('zes'))) return k.slice(0, -2);
+  if (/(ss|is|us)$/.test(k)) return k;
+  if (k.endsWith('s')) return k.slice(0, -1);
+  return k;
+}
+
+// Lê a lista de expressões compostas, uma por linha.
+// "proteção de dados"  -> frase exata.   "proteção + dados" -> aceita conectores (de, da, dos...) entre as partes.
+function parseCompounds(text) {
+  const specs = [];
+  let lineNo = -1;
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    lineNo++;
+    const flexible = line.includes('+');
+    const groups = (flexible ? line.split('+') : [line])
+      .map(p => tokenize(p.toLocaleLowerCase()).map(t => t.n))
+      .filter(g => g.length);
+    const size = groups.reduce((s, g) => s + g.length, 0);
+    if (size < 2) continue;
+    specs.push({ index: lineNo, label: line, groups, flexible, size });
+  }
+  return specs;
+}
+
+function matchAt(tokens, i, spec, source) {
+  const seq = [];
+  let pos = i;
+  for (let g = 0; g < spec.groups.length; g++) {
+    const grp = spec.groups[g];
+    const flexible = g > 0 && spec.flexible;
+    const skipped = [];
+    let p = pos;
+    while (true) {
+      const trial = [];
+      let good = true;
+      for (let k = 0; k < grp.length && good; k++) {
+        const tok = tokens[p + k];
+        const prev = trial[trial.length - 1] || skipped[skipped.length - 1] || seq[seq.length - 1];
+        good = !!tok && tok.n === grp[k] && (!prev || /^\s+$/.test(source.slice(prev.e, tok.s)));
+        if (good) trial.push(tok);
+      }
+      if (good) { seq.push(...skipped, ...trial); pos = p + grp.length; break; }
+      const connector = tokens[p];
+      const prev = skipped[skipped.length - 1] || seq[seq.length - 1];
+      if (!flexible || !connector || !CONNECTORS.has(connector.n)
+        || (prev && !/^\s+$/.test(source.slice(prev.e, connector.s)))) return null;
+      skipped.push(connector); p++;
+    }
+  }
+  return seq;
+}
+
+function stopsAndExcluded(opts) {
+  const stops = new Set(opts.languages.flatMap(l => STOPS[l].split(/\s+/)).map(normalize));
+  const ptes = opts.languages.includes('pt') || opts.languages.includes('es');
+  const en = opts.languages.includes('en');
+  const excluded = new Set();
+  for (const x of String(opts.exclude || '').split(/[,;\n]+/).map(s => normalize(s.trim())).filter(Boolean)) {
+    excluded.add(x);
+    if (opts.group) excluded.add(stem(x, ptes, en));
+  }
+  return { stops, excluded, ptes, en };
+}
+
+function countWords(text, options) {
+  const opts = mergeOptions(options);
+  const { stops, excluded, ptes, en } = stopsAndExcluded(opts);
+  const specs = parseCompounds(opts.compounds);
+  const ordered = [...specs].sort((a, b) => b.size - a.size);
+  const stats = new Map(specs.map(s => [s.index, { label: s.label, count: 0, forms: new Map() }]));
+  const counts = new Map();
+  let total = 0, retained = 0, cut = false;
+
+  const add = (key, word, compound, specIndex) => {
+    if (!counts.has(key)) counts.set(key, { key, count: 0, variants: new Map(), compound, specIndex });
+    const row = counts.get(key);
+    row.count++;
+    row.variants.set(word, (row.variants.get(word) || 0) + 1);
+  };
+
+  for (const doc of String(text).split('\f')) {
+    const prepared = prepare(doc, opts.references);
+    if (prepared.cut) cut = true;
+    const source = prepared.source;
+    const tokens = tokenize(source);
+    total += tokens.length;
+    for (let i = 0; i < tokens.length;) {
+      let hit = null;
+      for (const spec of ordered) {
+        const seq = matchAt(tokens, i, spec, source);
+        if (seq) { hit = { spec, seq }; break; }
+      }
+      if (hit) {
+        const form = hit.seq.map(t => t.w).join(' ');
+        const st = stats.get(hit.spec.index);
+        st.count++;
+        st.forms.set(form, (st.forms.get(form) || 0) + 1);
+        add('expr:' + hit.spec.index, form, true, hit.spec.index);
+        retained++;
+        if (opts.consume) { i += hit.seq.length; continue; }
+      }
+      const t = tokens[i++];
+      const key = t.n;
+      if (key.replace(/[^a-z\p{L}]/gu, '').length < opts.minLength || stops.has(key)) continue;
+      const gkey = opts.group ? stem(key, ptes, en) : key;
+      if (excluded.has(key) || excluded.has(gkey)) continue;
+      retained++;
+      add(gkey, t.w, false, -1);
+    }
+  }
+
+  const rows = Array.from(counts.values())
+    .filter(x => x.compound || x.count >= opts.minFreq)
+    .map(x => ({
+      key: x.key, count: x.count, compound: x.compound, specIndex: x.specIndex,
+      word: Array.from(x.variants).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'))[0][0]
+    }))
+    .sort((a, b) => b.count - a.count || a.word.localeCompare(b.word, 'pt-BR'));
+  const compounds = specs.map(s => {
+    const st = stats.get(s.index);
+    return { label: st.label, count: st.count, forms: Array.from(st.forms).sort((a, b) => b[1] - a[1]) };
+  });
+  return { rows, total, retained, cut, compounds };
+}
+
+// Sugere pares/trios de palavras que aparecem juntos com frequência.
+function suggestPhrases(text, options, max = 30) {
+  const opts = mergeOptions(options);
+  const { stops, excluded } = stopsAndExcluded({ ...opts, group: false });
+  const ok = t => t.n.length >= Math.max(3, opts.minLength) && !stops.has(t.n) && !excluded.has(t.n);
+  const gap = (a, b, src) => /^\s+$/.test(src.slice(a.e, b.s));
+  const counts = new Map();
+  const bump = phrase => {
+    const k = normalize(phrase);
+    const row = counts.get(k) || { phrase, count: 0 };
+    row.count++;
+    counts.set(k, row);
+  };
+  for (const doc of String(text).split('\f')) {
+    const { source } = prepare(doc, opts.references);
+    const tk = tokenize(source);
+    for (let i = 0; i < tk.length; i++) {
+      const a = tk[i], b = tk[i + 1], c = tk[i + 2];
+      if (b && ok(a) && ok(b) && gap(a, b, source)) bump(a.w + ' ' + b.w);
+      if (b && c && ok(a) && ok(c) && CONNECTORS.has(b.n) && gap(a, b, source) && gap(b, c, source)) bump(a.w + ' ' + b.w + ' ' + c.w);
+    }
+  }
+  return Array.from(counts.values()).filter(r => r.count >= 2)
+    .sort((x, y) => y.count - x.count || x.phrase.localeCompare(y.phrase, 'pt-BR')).slice(0, max);
+}
+
+// As N palavras mais frequentes + todas as expressões compostas pedidas.
+function pickRows(rows, limit) {
+  const top = rows.slice(0, limit);
+  const extra = rows.filter(r => r.compound && !top.includes(r));
+  return [...top, ...extra].sort((a, b) => b.count - a.count || a.word.localeCompare(b.word, 'pt-BR'));
+}
+
+function cloudLayout(rows, rotate, doc) {
+  const canvas = doc.createElement('canvas'), ctx = canvas.getContext('2d');
+  const placed = [], W = 1200, H = 720;
+  const max = rows[0]?.count || 1, min = rows.at(-1)?.count || 1;
+  const baseSize = row => max === min ? 38 : 19 + 69 * (Math.sqrt(row.count) - Math.sqrt(min)) / (Math.sqrt(max) - Math.sqrt(min));
+  const area = rows.reduce((sum, row) => {
+    const size = baseSize(row);
+    ctx.font = `700 ${size}px Arial`;
+    return sum + (ctx.measureText(row.word).width * 1.25 + 20) * (size * 1.3 + 8);
+  }, 0);
+  const densityScale = Math.min(1, Math.sqrt(W * H * .40 / Math.max(1, area)));
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const font = baseSize(row) * densityScale;
+    const vertical = rotate && i > 5 && i % 7 === 0;
+    let fit = null;
+    for (let attempt = 0; attempt < 4 && !fit; attempt++) {
+      const size = Math.max(12, Math.round(font * (1 - attempt * .16)));
+      ctx.font = `700 ${size}px Arial`;
+      const measured = ctx.measureText(row.word).width * 1.25 + 20, h = size * 1.3 + 8;
+      const width = vertical ? h : measured, height = vertical ? measured : h;
+      if (width > W - 40 || height > H - 40) continue;
+      for (let step = 0; step < 3600; step++) {
+        const angle = step * .34 + i * 1.13, r = 7.2 * Math.sqrt(step);
+        const x = W / 2 + Math.cos(angle) * r * 1.5, y = H / 2 + Math.sin(angle) * r * .95;
+        const left = x - width / 2, right = x + width / 2, top = y - height / 2, bottom = y + height / 2;
+        if (left < 18 || right > W - 18 || top < 18 || bottom > H - 18) continue;
+        if (placed.some(p => left < p.right && right > p.left && top < p.bottom && bottom > p.top)) continue;
+        fit = { ...row, size, vertical, x, y, left, right, top, bottom, glyphWidth: (measured - 20) / 1.25 };
+        break;
+      }
+    }
+    if (fit) placed.push(fit);
+  }
+  return placed;
+}
+
+const escapeXML = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
+const colorOf = (w, i) => w.compound ? COMPOUND_COLOR : COLORS[i % COLORS.length];
+
+// Gera o SVG que é salvo como anexo no Zotero (com os dados embutidos).
+function svg(payload, doc) {
+  const options = mergeOptions(payload.options);
+  const result = countWords(payload.text, options);
+  const words = cloudLayout(pickRows(result.rows, options.limit), options.rotate, doc);
+  if (!words.length) throw new Error('Nenhuma palavra passou pelos filtros. O PDF pode conter pouco texto ou precisar de OCR.');
+  const metadata = { ...payload, schema: 'nuvem-zotero/v1', options };
+  const shapes = words.map((w, i) =>
+    `<g transform="translate(${w.x.toFixed(2)} ${w.y.toFixed(2)})${w.vertical ? ' rotate(-90)' : ''}"><text text-anchor="middle" x="0" y="${(w.size * .34).toFixed(2)}" textLength="${w.glyphWidth.toFixed(2)}" lengthAdjust="spacingAndGlyphs" font-family="Arial, sans-serif" font-weight="700" font-size="${w.size}" fill="${colorOf(w, i)}">${escapeXML(w.word)}<title>${escapeXML(w.word)}: ${w.count} ocorrências</title></text></g>`).join('');
+  const content = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720"><title>${escapeXML('Nuvem de palavras: ' + payload.title)}</title><metadata id="nuvem-zotero-data">${escapeXML(JSON.stringify(metadata))}</metadata><rect width="1200" height="720" fill="#ffffff"/>${shapes}</svg>`;
+  return { content, words, rows: result.rows };
+}
+
+return { defaults, mergeOptions, countWords, suggestPhrases, pickRows, cloudLayout, svg, normalize, colorOf, COLORS, COMPOUND_COLOR };
+})();
+
+
+===== ARQUIVO: content/interface.js =====
+/* Tradução explícita, compatível com documento XHTML/XML do Zotero.
+   Não usa document.body nem substitui os eventos de geração/salvamento. */
+(() => {
+  const root = document.getElementById('nuvem-interface-root');
+  const trigger = document.getElementById('interface-language');
+  const picker = document.getElementById('language-picker');
+  const choicesPanel = document.getElementById('language-options');
+  const currentLanguage = document.getElementById('current-language');
+  if (!root || !trigger || !picker || !choicesPanel || !currentLanguage) { console.error('[Nuvem] Interface de idiomas não encontrada.'); return; }
+  const languageNames = {'pt-BR':'Português', en:'English', es:'Español', fr:'Français', de:'Deutsch', 'zh-CN':'简体中文', ja:'日本語'};
+  const languageButtons = Array.from(choicesPanel.querySelectorAll('[data-language]'));
+  const available = ['pt-BR', 'en', 'es', 'fr', 'de', 'zh-CN', 'ja'];
+  const pref = 'extensions.nuvem-palavras.interfaceLanguage';
+  let language = 'pt-BR';
+  let prefs;
+  try { prefs = Services.prefs; language = prefs.getStringPref(pref, 'pt-BR'); } catch (_) {}
+  if (!available.includes(language)) language = 'pt-BR';
+  const dynamicSources = new WeakMap();
+  const templates = {
+    en: ['{0} words in analyzed text · {1} terms after filters · {2} words in cloud','File saved to: ','Could not complete: ','Error generating cloud: ','Could not save to Zotero: '],
+    es: ['{0} palabras en el texto analizado · {1} términos tras los filtros · {2} palabras en la nube','Archivo guardado en: ','No se pudo completar: ','Error al generar la nube: ','No se pudo guardar en Zotero: '],
+    fr: ['{0} mots analysés · {1} termes après filtrage · {2} mots dans le nuage','Fichier enregistré : ','Impossible de terminer : ','Erreur de génération : ','Impossible d’enregistrer dans Zotero : '],
+    de: ['{0} Wörter im Text · {1} Begriffe nach Filtern · {2} Wörter in der Wolke','Datei gespeichert unter: ','Vorgang fehlgeschlagen: ','Fehler beim Erstellen: ','Speichern in Zotero fehlgeschlagen: '],
+    'zh-CN': ['分析文本中有 {0} 个词语 · 筛选后有 {1} 个词条 · 词云中有 {2} 个词语','文件已保存至：','无法完成：','生成词云时出错：','无法保存到 Zotero：'],
+    ja: ['分析テキスト内 {0} 語 · フィルター後 {1} 項目 · クラウド内 {2} 語','保存先：','処理を完了できません：','クラウド生成エラー：','Zotero に保存できません：']
+  };
+  function translate(text) {
+    if (language === 'pt-BR') return text;
+    const entry = NuvemTranslations[text];
+    if (entry) return entry[language] || entry.en || text;
+    const template = templates[language];
+    const status = text.match(/^([\d.,]+) palavras no texto analisado · ([\d.,]+) termos após os filtros · (\d+) palavras na nuvem$/);
+    if (status) return template[0].replace(/\{([0-2])\}/g, (_, n) => status[Number(n) + 1]);
+    const prefixes = ['Arquivo salvo em: ', 'Não foi possível concluir: ', 'Erro ao gerar a nuvem: ', 'Não foi possível gravar no Zotero: '];
+    for (let i = 0; i < prefixes.length; i++) if (text.startsWith(prefixes[i])) return template[i + 1] + text.slice(prefixes[i].length);
+    // Os avisos podem conter mais de uma frase; substitui apenas mensagens conhecidas.
+    let output = text;
+    for (const [source, translations] of Object.entries(NuvemTranslations)) {
+      if (source.length > 70 && output.includes(source)) output = output.replace(source, translations[language] || translations.en);
+    }
+    return output;
+  }
+  function setText(el, value) { if (el.textContent !== value) el.textContent = value; }
+  function updateDynamic(el) {
+    const raw = el.textContent;
+    const previous = dynamicSources.get(el);
+    const source = previous && raw === previous.output ? previous.source : raw;
+    const output = translate(source);
+    dynamicSources.set(el, {source, output});
+    setText(el, output);
+  }
+  const dynamic = ['status','export-message','error','notice','save-zotero','suggestions'];
+  const observer = new MutationObserver(() => { update(); });
+  function update() {
+    observer.disconnect();
+    try {
+      setText(currentLanguage, languageNames[language]);
+      for (const button of languageButtons) button.setAttribute('aria-pressed', String(button.getAttribute('data-language') === language));
+      document.documentElement.setAttribute('lang', language);
+      document.documentElement.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:lang', language);
+      for (const el of root.querySelectorAll('[data-i18n]')) {
+        // O botão de salvar tem texto temporário durante a gravação.
+        if (el.id !== 'save-zotero') setText(el, translate(el.getAttribute('data-i18n')));
+      }
+      for (const attr of ['title','placeholder','aria-label']) {
+        for (const el of root.querySelectorAll('[data-i18n-' + attr + ']')) {
+          const value = translate(el.getAttribute('data-i18n-' + attr));
+          if (el.getAttribute(attr) !== value) el.setAttribute(attr, value);
+        }
+      }
+      for (const id of dynamic) {
+        const el = document.getElementById(id);
+        if (el && (id !== 'suggestions' || !el.children.length)) updateDynamic(el);
+      }
+    } catch (error) { console.error('[Nuvem] Erro na tradução da interface', error); }
+    finally {
+      for (const id of dynamic) {
+        const el = document.getElementById(id);
+        if (el) observer.observe(el, {subtree:true, childList:true, characterData:true});
+      }
+    }
+  }
+  function changeLanguage(chosen) {
+    if (!available.includes(chosen)) return;
+    language = chosen;
+    try { prefs?.setStringPref(pref, language); } catch (error) { console.error('[Nuvem] Não foi possível guardar o idioma', error); }
+    update();
+    window.dispatchEvent(new CustomEvent('nuvem-languagechange'));
+  }
+  function closeLanguages(restoreFocus = false) {
+    choicesPanel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) trigger.focus();
+  }
+  trigger.addEventListener('click', () => {
+    const opening = choicesPanel.hidden;
+    choicesPanel.hidden = !opening;
+    trigger.setAttribute('aria-expanded', String(opening));
+    if (opening) {
+      const selected = languageButtons.find(button => button.getAttribute('data-language') === language);
+      (selected || languageButtons[0])?.focus();
+    }
+  });
+  for (const button of languageButtons) {
+    button.addEventListener('click', () => {
+      changeLanguage(button.getAttribute('data-language'));
+      closeLanguages(true);
+    });
+  }
+  document.addEventListener('click', event => {
+    if (!picker.contains(event.target)) closeLanguages();
+  });
+  document.addEventListener('keydown', event => {
+    if (!choicesPanel.hidden && event.key === 'Escape') {
+      event.preventDefault();
+      closeLanguages(true);
+    }
+  });
+  const panel = document.getElementById('about-panel');
+  document.getElementById('about-open').addEventListener('click', () => {
+    panel.hidden = false; panel.scrollIntoView({block:'nearest'});
+    document.getElementById('about-close').focus();
+  });
+  document.getElementById('about-close').addEventListener('click', () => {
+    panel.hidden = true; document.getElementById('about-open').focus();
+  });
+  update();
+})();
+
+
+===== ARQUIVO: content/main-interface.js =====
+/* Tradução adicional dos rótulos dos menus, sem alterar suas ações. */
+(() => {
+  const labels = {
+    'Criar nuvem de palavras': {en:'Create word cloud',es:'Crear nube de palabras',fr:'Créer un nuage de mots',de:'Wortwolke erstellen','zh-CN':'创建词云',ja:'ワードクラウドを作成'},
+    'Criar nuvem da coleção': {en:'Create collection word cloud',es:'Crear nube de la colección',fr:'Créer un nuage de la collection',de:'Wortwolke der Sammlung erstellen','zh-CN':'创建分类词云',ja:'コレクションのワードクラウドを作成'},
+    'Criar nuvem dos itens selecionados': {en:'Create cloud from selected items',es:'Crear nube de los elementos seleccionados',fr:'Créer un nuage des éléments sélectionnés',de:'Wortwolke ausgewählter Einträge erstellen','zh-CN':'为所选条目创建词云',ja:'選択したアイテムのワードクラウドを作成'},
+    'Abrir ferramenta da nuvem…': {en:'Open word cloud tool…',es:'Abrir herramienta de nube…',fr:'Ouvrir l’outil de nuage…',de:'Wortwolkenwerkzeug öffnen…','zh-CN':'打开词云工具…',ja:'ワードクラウドツールを開く…'}
+  };
+  const addWindow = NuvemZotero.addWindow;
+  NuvemZotero.addWindow = function(win) {
+    const alreadyAdded = this.windows.has(win);
+    addWindow.call(this, win);
+    if (alreadyAdded) return;
+    const state = this.windows.get(win);
+    for (const [parentID, suffix] of [['menu_ToolsPopup','tools'],['zotero-itemmenu','context'],['zotero-collectionmenu','collection']]) {
+      const parent = win.document.getElementById(parentID);
+      const node = win.document.getElementById('nuvem-zotero-' + suffix);
+      if (!parent || !node) continue;
+      const translate = () => {
+        const language = Services.prefs.getStringPref('extensions.nuvem-palavras.interfaceLanguage', 'pt-BR');
+        const current = node.getAttribute('label');
+        const source = Object.keys(labels).find(k => k === current || Object.values(labels[k]).includes(current));
+        if (source) node.setAttribute('label', labels[source][language] || source);
+      };
+      parent.addEventListener('popupshowing', translate);
+      state.listeners.push([parent, 'popupshowing', translate]);
+      translate();
+    }
+  };
+})();
+
+
+===== ARQUIVO: content/simple-interface.js =====
+/* Organização visual: reutiliza os botões e handlers existentes de exportação. */
+(() => {
+  const el = id => document.getElementById(id);
+  const picker = el('export-picker'), button = el('export-open'), options = el('export-options');
+  function closeExports(restoreFocus = false) {
+    options.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) button.focus();
+  }
+  button.addEventListener('click', () => {
+    const opening = options.hidden;
+    options.hidden = !opening;
+    button.setAttribute('aria-expanded', String(opening));
+    if (opening) Array.from(options.querySelectorAll('button')).find(node => !node.disabled)?.focus();
+  });
+  for (const choice of options.querySelectorAll('button')) choice.addEventListener('click', () => closeExports());
+  document.addEventListener('click', event => {
+    if (!picker.contains(event.target)) closeExports();
+  });
+  document.addEventListener('keydown', event => {
+    if (!options.hidden && event.key === 'Escape') { event.preventDefault(); closeExports(true); }
+  });
+  const help = el('help-panel');
+  el('help-open').addEventListener('click', () => {
+    help.hidden = false; help.scrollIntoView({block:'nearest'}); el('help-close').focus();
+  });
+  el('help-close').addEventListener('click', () => {
+    help.hidden = true; el('help-open').focus();
+  });
+})();
+
+
+===== ARQUIVO: content/theme.js =====
+/* Apenas paleta quente; núcleo e métodos originais preservados. */
+NuvemCore.COLORS.splice(0, NuvemCore.COLORS.length,
+  '#76523f', '#a45f46', '#926b32', '#887044', '#875762', '#665046', '#aa7045');
+// Expressões ficam na mesma paleta quente na janela e no SVG gravado.
+NuvemCore.colorOf = (word, index) => NuvemCore.COLORS[index % NuvemCore.COLORS.length];
+const originalNuvemSVG = NuvemCore.svg;
+NuvemCore.svg = function(...args) {
+  const result = originalNuvemSVG.apply(this, args);
+  // Troca somente o atributo de cor original das expressões; metadados não são alterados.
+  result.content = result.content.replace(/fill="#b3261e"/g, 'fill="#76523f"');
+  return result;
+};
+
+
+===== ARQUIVO: content/translations.js =====
+/* Catálogo da interface. Não traduz os textos dos artigos. */
+var NuvemTranslations = {
+  "Idioma da interface": {
+    "en": "Interface language",
+    "es": "Idioma de la interfaz",
+    "zh-CN": "界面语言",
+    "ja": "表示言語",
+    "fr": "Langue de l’interface",
+    "de": "Sprache der Oberfläche"
+  },
+  "Sobre": {
+    "en": "About",
+    "es": "Acerca de",
+    "zh-CN": "关于",
+    "ja": "このプラグインについて",
+    "fr": "À propos",
+    "de": "Über dieses Plugin"
+  },
+  "Fechar": {
+    "en": "Close",
+    "es": "Cerrar",
+    "zh-CN": "关闭",
+    "ja": "閉じる",
+    "fr": "Fermer",
+    "de": "Schließen"
+  },
+  "Ajustar a nuvem": {
+    "en": "Adjust word cloud",
+    "es": "Ajustar la nube",
+    "zh-CN": "调整词云",
+    "ja": "ワードクラウドを調整",
+    "fr": "Ajuster le nuage",
+    "de": "Wortwolke anpassen"
+  },
+  "Quantidade de palavras": {
+    "en": "Number of words",
+    "es": "Cantidad de palabras",
+    "zh-CN": "词语数量",
+    "ja": "単語数",
+    "fr": "Nombre de mots",
+    "de": "Anzahl der Wörter"
+  },
+  "palavras · de 15 a 150": {
+    "en": "words · from 15 to 150",
+    "es": "palabras · de 15 a 150",
+    "zh-CN": "个词语 · 15 至 150",
+    "ja": "語 · 15～150",
+    "fr": "mots · de 15 à 150",
+    "de": "Wörter · 15 bis 150"
+  },
+  "Mín. de letras": {
+    "en": "Min. letters",
+    "es": "Mín. de letras",
+    "zh-CN": "最少字母数",
+    "ja": "最小文字数",
+    "fr": "Nombre min. de lettres",
+    "de": "Min. Buchstaben"
+  },
+  "Mín. de ocorrências": {
+    "en": "Min. occurrences",
+    "es": "Mín. de apariciones",
+    "zh-CN": "最少出现次数",
+    "ja": "最小出現回数",
+    "fr": "Occurrences min.",
+    "de": "Min. Vorkommen"
+  },
+  "Ignorar palavras comuns": {
+    "en": "Ignore common words",
+    "es": "Ignorar palabras comunes",
+    "zh-CN": "忽略常用词",
+    "ja": "一般的な単語を除外",
+    "fr": "Ignorer les mots courants",
+    "de": "Häufige Wörter ignorieren"
+  },
+  "Português": {
+    "en": "Portuguese",
+    "es": "Portugués",
+    "zh-CN": "葡萄牙语",
+    "ja": "ポルトガル語",
+    "fr": "Portugais",
+    "de": "Portugiesisch"
+  },
+  "Inglês": {
+    "en": "English",
+    "es": "Inglés",
+    "zh-CN": "英语",
+    "ja": "英語",
+    "fr": "Anglais",
+    "de": "Englisch"
+  },
+  "Espanhol": {
+    "en": "Spanish",
+    "es": "Español",
+    "zh-CN": "西班牙语",
+    "ja": "スペイン語",
+    "fr": "Espagnol",
+    "de": "Spanisch"
+  },
+  "Outras palavras para ignorar": {
+    "en": "Other words to ignore",
+    "es": "Otras palabras para ignorar",
+    "zh-CN": "其他需要忽略的词语",
+    "ja": "その他の除外する単語",
+    "fr": "Autres mots à ignorer",
+    "de": "Weitere Wörter ignorieren"
+  },
+  "Ex.: artigo, estudo, autor": {
+    "en": "E.g.: article, study, author",
+    "es": "Ej.: artículo, estudio, autor",
+    "zh-CN": "例如：文章、研究、作者",
+    "ja": "例：論文、研究、著者",
+    "fr": "Ex. : article, étude, auteur",
+    "de": "Z. B.: Artikel, Studie, Autor"
+  },
+  "Separe por vírgula ou linha. Clique numa palavra da nuvem para ignorá-la.": {
+    "en": "Separate with commas or new lines. Click a cloud word to exclude it.",
+    "es": "Separe por comas o líneas. Haga clic en una palabra de la nube para excluirla.",
+    "zh-CN": "用逗号或换行分隔。点击词云中的词语可将其排除。",
+    "ja": "カンマまたは改行で区切ります。クラウド内の単語をクリックすると除外できます。",
+    "fr": "Séparez par des virgules ou des lignes. Cliquez sur un mot du nuage pour l’exclure.",
+    "de": "Mit Kommas oder Zeilenumbrüchen trennen. Ein Wort in der Wolke anklicken, um es auszuschließen."
+  },
+  "Excluir a seção final de referências quando houver um título reconhecível.": {
+    "en": "Exclude the final references section when its heading is recognized.",
+    "es": "Excluir la sección final de referencias cuando se reconozca su título.",
+    "zh-CN": "识别到标题时，排除末尾的参考文献部分。",
+    "ja": "見出しを認識した場合、末尾の参考文献を除外する。",
+    "fr": "Exclure les références finales lorsqu’un titre est reconnu.",
+    "de": "Den letzten Literaturabschnitt ausschließen, wenn seine Überschrift erkannt wird."
+  },
+  "Incluir palavras na vertical": {
+    "en": "Include vertical words",
+    "es": "Incluir palabras verticales",
+    "zh-CN": "包含竖排词语",
+    "ja": "縦向きの単語を含める",
+    "fr": "Inclure des mots verticaux",
+    "de": "Vertikale Wörter einschließen"
+  },
+  "Agrupar singular e plural (dado / dados)": {
+    "en": "Group singular and plural forms (datum / data)",
+    "es": "Agrupar singular y plural (dato / datos)",
+    "zh-CN": "合并单数和复数形式",
+    "ja": "単数形と複数形をまとめる",
+    "fr": "Regrouper singulier et pluriel",
+    "de": "Singular und Plural zusammenfassen"
+  },
+  "Expressões compostas": {
+    "en": "Compound expressions",
+    "es": "Expresiones compuestas",
+    "zh-CN": "复合表达",
+    "ja": "複合表現",
+    "fr": "Expressions composées",
+    "de": "Mehrwortausdrücke"
+  },
+  "Uma por linha. Escreva a frase como aparece no texto (proteção de dados) ou ligue palavras com + (proteção + dados) para aceitar também \"proteção dos dados\". Clique numa expressão da nuvem para removê-la.": {
+    "en": "One per line. Enter the phrase as it appears in the text (data protection), or join words with + (protection + data) to also allow connectors between them. Click a cloud expression to remove it.",
+    "es": "Una por línea. Escriba la frase tal como aparece en el texto (protección de datos) o una palabras con + (protección + datos) para aceptar conectores entre ellas. Haga clic en una expresión de la nube para eliminarla.",
+    "zh-CN": "每行一个。输入原文中的短语，或用 + 连接词语以允许中间出现连接词。点击词云中的表达可将其移除。",
+    "ja": "1 行に 1 件。本文の表現を入力するか、単語を + でつないで間の接続語を許可します。クラウドの表現をクリックすると削除できます。",
+    "fr": "Une par ligne. Saisissez l’expression du texte ou reliez les mots avec + pour accepter des connecteurs entre eux. Cliquez sur une expression du nuage pour la supprimer.",
+    "de": "Ein Ausdruck pro Zeile. Den Ausdruck aus dem Text eingeben oder Wörter mit + verbinden, um Verbindungswörter dazwischen zuzulassen. Zum Entfernen einen Ausdruck in der Wolke anklicken."
+  },
+  "Não contar de novo as palavras soltas que fazem parte das expressões.": {
+    "en": "Do not count individual words again when they belong to expressions.",
+    "es": "No volver a contar palabras individuales que forman parte de expresiones.",
+    "zh-CN": "不再单独计算已包含在表达中的词语。",
+    "ja": "表現に含まれる単語を単独で重複集計しない。",
+    "fr": "Ne pas recompter les mots individuels inclus dans les expressions.",
+    "de": "Einzelwörter innerhalb von Ausdrücken nicht erneut zählen."
+  },
+  "Atualizar nuvem": {
+    "en": "Update cloud",
+    "es": "Actualizar nube",
+    "zh-CN": "更新词云",
+    "ja": "クラウドを更新",
+    "fr": "Actualiser le nuage",
+    "de": "Wortwolke aktualisieren"
+  },
+  "Salvar como padrão": {
+    "en": "Save as default",
+    "es": "Guardar como predeterminado",
+    "zh-CN": "保存为默认设置",
+    "ja": "既定値として保存",
+    "fr": "Enregistrer par défaut",
+    "de": "Als Standard speichern"
+  },
+  "Restaurar": {
+    "en": "Reset",
+    "es": "Restaurar",
+    "zh-CN": "重置",
+    "ja": "リセット",
+    "fr": "Réinitialiser",
+    "de": "Zurücksetzen"
+  },
+  "Guarda filtros, palavras ignoradas e expressões para as próximas nuvens": {
+    "en": "Save filters, excluded words and expressions for future clouds",
+    "es": "Guarda filtros, palabras excluidas y expresiones para futuras nubes",
+    "zh-CN": "为以后的词云保存筛选条件、排除词语和表达",
+    "ja": "今後のクラウド用にフィルター、除外語、表現を保存",
+    "fr": "Enregistrer filtres, mots exclus et expressions pour les prochains nuages",
+    "de": "Filter, ausgeschlossene Wörter und Ausdrücke für künftige Wolken speichern"
+  },
+  "Palavras mais frequentes": {
+    "en": "Most frequent words",
+    "es": "Palabras más frecuentes",
+    "zh-CN": "最高频词语",
+    "ja": "頻出単語",
+    "fr": "Mots les plus fréquents",
+    "de": "Häufigste Wörter"
+  },
+  "Salvar no Zotero": {
+    "en": "Save to Zotero",
+    "es": "Guardar en Zotero",
+    "zh-CN": "保存到 Zotero",
+    "ja": "Zotero に保存",
+    "fr": "Enregistrer dans Zotero",
+    "de": "In Zotero speichern"
+  },
+  "Grava estes ajustes no anexo da nuvem": {
+    "en": "Save these settings in the cloud attachment",
+    "es": "Guarda estos ajustes en el adjunto de la nube",
+    "zh-CN": "将这些设置保存到词云附件",
+    "ja": "設定をクラウドの添付ファイルに保存",
+    "fr": "Enregistrer ces réglages dans la pièce jointe du nuage",
+    "de": "Diese Einstellungen im Wolkenanhang speichern"
+  },
+  "Salvar JPG": {
+    "en": "Save JPG",
+    "es": "Guardar JPG",
+    "zh-CN": "保存 JPG",
+    "ja": "JPG を保存",
+    "fr": "Enregistrer JPG",
+    "de": "JPG speichern"
+  },
+  "Salvar PNG": {
+    "en": "Save PNG",
+    "es": "Guardar PNG",
+    "zh-CN": "保存 PNG",
+    "ja": "PNG を保存",
+    "fr": "Enregistrer PNG",
+    "de": "PNG speichern"
+  },
+  "Salvar SVG": {
+    "en": "Save SVG",
+    "es": "Guardar SVG",
+    "zh-CN": "保存 SVG",
+    "ja": "SVG を保存",
+    "fr": "Enregistrer SVG",
+    "de": "SVG speichern"
+  },
+  "Salvar CSV": {
+    "en": "Save CSV",
+    "es": "Guardar CSV",
+    "zh-CN": "保存 CSV",
+    "ja": "CSV を保存",
+    "fr": "Enregistrer CSV",
+    "de": "CSV speichern"
+  },
+  "Nuvem de palavras do artigo": {
+    "en": "Article word cloud",
+    "es": "Nube de palabras del artículo",
+    "zh-CN": "文章词云",
+    "ja": "論文のワードクラウド",
+    "fr": "Nuage de mots de l’article",
+    "de": "Wortwolke des Artikels"
+  },
+  "Expressão": {
+    "en": "Expression",
+    "es": "Expresión",
+    "zh-CN": "表达",
+    "ja": "表現",
+    "fr": "Expression",
+    "de": "Ausdruck"
+  },
+  "Ocorrências": {
+    "en": "Occurrences",
+    "es": "Apariciones",
+    "zh-CN": "出现次数",
+    "ja": "出現回数",
+    "fr": "Occurrences",
+    "de": "Vorkommen"
+  },
+  "Formas encontradas": {
+    "en": "Matched forms",
+    "es": "Formas encontradas",
+    "zh-CN": "匹配形式",
+    "ja": "検出された形",
+    "fr": "Formes trouvées",
+    "de": "Gefundene Formen"
+  },
+  "Sugerir expressões frequentes": {
+    "en": "Suggest frequent expressions",
+    "es": "Sugerir expresiones frecuentes",
+    "zh-CN": "推荐常见表达",
+    "ja": "頻出表現を提案",
+    "fr": "Suggérer des expressions fréquentes",
+    "de": "Häufige Ausdrücke vorschlagen"
+  },
+  "Pares e trios de palavras que aparecem juntos com frequência no texto. Clique numa sugestão para adicioná-la à lista de expressões.": {
+    "en": "Word pairs and triples that frequently appear together. Click a suggestion to add it to the expressions list.",
+    "es": "Pares y tríos de palabras que aparecen juntas con frecuencia. Haga clic en una sugerencia para añadirla a la lista.",
+    "zh-CN": "在文本中经常一起出现的两个或三个词语。点击建议可将其加入表达列表。",
+    "ja": "本文で頻繁に隣接する 2 語または 3 語の組み合わせです。候補をクリックすると表現リストに追加できます。",
+    "fr": "Paires et triplets de mots apparaissant souvent ensemble. Cliquez sur une suggestion pour l’ajouter à la liste.",
+    "de": "Wortpaare und Dreiergruppen, die häufig gemeinsam auftreten. Einen Vorschlag anklicken, um ihn zur Liste hinzuzufügen."
+  },
+  "Calcular sugestões": {
+    "en": "Calculate suggestions",
+    "es": "Calcular sugerencias",
+    "zh-CN": "计算建议",
+    "ja": "候補を計算",
+    "fr": "Calculer les suggestions",
+    "de": "Vorschläge berechnen"
+  },
+  "Ver tabela de frequências": {
+    "en": "View frequency table",
+    "es": "Ver tabla de frecuencias",
+    "zh-CN": "查看词频表",
+    "ja": "頻度表を表示",
+    "fr": "Afficher les fréquences",
+    "de": "Häufigkeitstabelle anzeigen"
+  },
+  "Todas as palavras que passam pelos filtros, em ordem de frequência. A tabela mostra as primeiras 500; o CSV contém todas.": {
+    "en": "All words passing the filters, ordered by frequency. The table shows the first 500; the CSV contains all words.",
+    "es": "Todas las palabras que pasan los filtros, por frecuencia. La tabla muestra las primeras 500; el CSV contiene todas.",
+    "zh-CN": "按频率列出所有通过筛选的词语。表格显示前 500 个；CSV 包含全部词语。",
+    "ja": "フィルターを通過した全単語を頻度順に表示します。表は先頭 500 件、CSV は全件を含みます。",
+    "fr": "Tous les mots retenus par les filtres, par fréquence. Le tableau affiche les 500 premiers ; le CSV les contient tous.",
+    "de": "Alle gefilterten Wörter nach Häufigkeit. Die Tabelle zeigt die ersten 500; die CSV enthält alle."
+  },
+  "Palavra": {
+    "en": "Word",
+    "es": "Palabra",
+    "zh-CN": "词语",
+    "ja": "単語",
+    "fr": "Mot",
+    "de": "Wort"
+  },
+  "Revisar e editar o texto analisado": {
+    "en": "Review and edit analyzed text",
+    "es": "Revisar y editar el texto analizado",
+    "zh-CN": "查看和编辑分析文本",
+    "ja": "分析対象テキストの確認と編集",
+    "fr": "Vérifier et modifier le texte analysé",
+    "de": "Analysierten Text prüfen und bearbeiten"
+  },
+  "Texto do artigo": {
+    "en": "Article text",
+    "es": "Texto del artículo",
+    "zh-CN": "文章文本",
+    "ja": "論文のテキスト",
+    "fr": "Texte de l’article",
+    "de": "Artikeltext"
+  },
+  "Este é o texto extraído do PDF. Você pode retirar cabeçalhos, referências ou partes que não deseja analisar. A edição afeta só esta janela.": {
+    "en": "This text was extracted from the PDF. Remove headers, references or passages you do not want to analyze. Edits affect this window only.",
+    "es": "Este texto se extrajo del PDF. Puede quitar encabezados, referencias o pasajes que no desea analizar. La edición afecta solo a esta ventana.",
+    "zh-CN": "这是从 PDF 提取的文本。您可以删除不想分析的页眉、参考文献或段落。编辑仅影响此窗口。",
+    "ja": "PDF から抽出したテキストです。分析しないヘッダー、参考文献、段落を削除できます。編集はこのウィンドウにのみ反映されます。",
+    "fr": "Texte extrait du PDF. Retirez les en-têtes, références ou passages à exclure de l’analyse. Les modifications concernent uniquement cette fenêtre.",
+    "de": "Aus dem PDF extrahierter Text. Nicht benötigte Kopfzeilen, Literaturangaben oder Abschnitte können entfernt werden. Änderungen betreffen nur dieses Fenster."
+  },
+  "O tamanho das palavras representa sua frequência no texto. A nuvem não identifica a importância conceitual dos termos. Maiúsculas e variantes com/sem acento são contadas juntas; formas no singular e plural permanecem separadas. Texto em colunas, cabeçalhos e extração de PDF podem afetar os resultados.": {
+    "en": "Word size represents frequency, not conceptual importance. Uppercase and accented/unaccented variants are counted together; singular and plural remain separate unless grouping is enabled. Columns, headers and PDF extraction may affect results.",
+    "es": "El tamaño representa la frecuencia, no la importancia conceptual. Mayúsculas y variantes con/sin acento se cuentan juntas; singular y plural permanecen separados salvo que se active la agrupación. Las columnas, encabezados y extracción de PDF pueden afectar los resultados.",
+    "zh-CN": "词语大小表示出现频率，而非概念重要性。大小写和带或不带重音符号的形式合并计算；除非启用合并，单复数仍分别计算。分栏、页眉和 PDF 文本提取可能影响结果。",
+    "ja": "単語の大きさは概念上の重要性ではなく頻度を表します。大文字小文字とアクセントの有無はまとめて数え、単数形と複数形はグループ化を有効にしない限り別々に数えます。段組み、ヘッダー、PDF の抽出が結果に影響する場合があります。",
+    "fr": "La taille représente la fréquence, pas l’importance conceptuelle. Les majuscules et variantes avec ou sans accent sont regroupées ; singulier et pluriel restent séparés sauf si le regroupement est activé. Colonnes, en-têtes et extraction PDF peuvent affecter les résultats.",
+    "de": "Die Wortgröße zeigt die Häufigkeit, nicht die inhaltliche Bedeutung. Großschreibung und Varianten mit oder ohne Akzent werden zusammengezählt; Singular und Plural bleiben getrennt, sofern die Gruppierung nicht aktiviert ist. Spalten, Kopfzeilen und PDF-Extraktion können die Ergebnisse beeinflussen."
+  },
+  "Versão 0.9.4 · 01/10/2026": {
+    "en": "Version 0.9.4 · 2026-10-01",
+    "es": "Versión 0.9.4 · 01/10/2026",
+    "zh-CN": "版本 0.9.4 · 2026-10-01",
+    "ja": "バージョン 0.9.4 · 2026-10-01",
+    "fr": "Version 0.9.4 · 01/10/2026",
+    "de": "Version 0.9.4 · 01.10.2026"
+  },
+  "Autor: Victor Hugo Levindo": {
+    "en": "Author: Victor Hugo Levindo",
+    "es": "Autor: Victor Hugo Levindo",
+    "zh-CN": "作者：Victor Hugo Levindo",
+    "ja": "作者：Victor Hugo Levindo",
+    "fr": "Auteur : Victor Hugo Levindo",
+    "de": "Autor: Victor Hugo Levindo"
+  },
+  "Compatibilidade: Zotero 10.0.x · referência de teste: Windows 64-bit, Zotero 10.0.1.": {
+    "en": "Compatibility: Zotero 10.0.x · test target: Windows 64-bit, Zotero 10.0.1.",
+    "es": "Compatibilidad: Zotero 10.0.x · referencia de prueba: Windows 64-bit, Zotero 10.0.1.",
+    "zh-CN": "兼容性：Zotero 10.0.x · 测试目标：Windows 64 位，Zotero 10.0.1。",
+    "ja": "互換性：Zotero 10.0.x · テスト対象：Windows 64 ビット、Zotero 10.0.1。",
+    "fr": "Compatibilité : Zotero 10.0.x · cible de test : Windows 64 bits, Zotero 10.0.1.",
+    "de": "Kompatibilität: Zotero 10.0.x · Testziel: Windows 64-Bit, Zotero 10.0.1."
+  },
+  "Base funcional: versão 0.8.1 desenvolvida com auxílio do Claude.": {
+    "en": "Functional base: version 0.8.1 developed with help from Claude.",
+    "es": "Base funcional: versión 0.8.1 desarrollada con ayuda de Claude.",
+    "zh-CN": "功能基础：在 Claude 协助下开发的 0.8.1 版本。",
+    "ja": "機能の基盤：Claude の支援で開発したバージョン 0.8.1。",
+    "fr": "Base fonctionnelle : version 0.8.1 développée avec l’aide de Claude.",
+    "de": "Funktionsbasis: Version 0.8.1, mit Unterstützung von Claude entwickelt."
+  },
+  "Esta versão corrige a troca de idioma, acrescenta idiomas e ajusta as cores da nuvem.": {
+    "en": "This version fixes language switching, adds languages and adjusts cloud colors.",
+    "es": "Esta versión corrige el cambio de idioma, añade idiomas y ajusta los colores de la nube.",
+    "zh-CN": "此版本修复界面语言切换、增加语言并调整词云颜色。",
+    "ja": "このバージョンは表示言語の切り替えを修正し、言語を追加してクラウドの色を調整します。",
+    "fr": "Cette version corrige le changement de langue, ajoute des langues et ajuste les couleurs du nuage.",
+    "de": "Diese Version korrigiert den Sprachwechsel, ergänzt Sprachen und passt die Farben der Wortwolke an."
+  },
+  "Idiomas da interface: português, inglês, espanhol, francês, alemão, chinês e japonês. Os filtros de palavras são configurados separadamente.": {
+    "en": "Interface languages: Portuguese, English, Spanish, French, German, Chinese and Japanese. Word filters are configured separately.",
+    "es": "Idiomas de interfaz: portugués, inglés, español, francés, alemán, chino y japonés. Los filtros de palabras se configuran por separado.",
+    "zh-CN": "界面提供七种语言。词语筛选条件单独设置。",
+    "ja": "表示言語は 7 言語です。単語フィルターは別に設定します。",
+    "fr": "Sept langues d’interface. Les filtres de mots sont configurés séparément.",
+    "de": "Sieben Oberflächensprachen. Wortfilter werden separat eingestellt."
+  },
+  "Escolha onde salvar o arquivo…": {
+    "en": "Choose where to save the file…",
+    "es": "Elija dónde guardar el archivo…",
+    "zh-CN": "选择文件保存位置…",
+    "ja": "ファイルの保存先を選択…",
+    "fr": "Choisissez où enregistrer le fichier…",
+    "de": "Speicherort auswählen…"
+  },
+  "Salvamento cancelado.": {
+    "en": "Save cancelled.",
+    "es": "Guardado cancelado.",
+    "zh-CN": "已取消保存。",
+    "ja": "保存をキャンセルしました。",
+    "fr": "Enregistrement annulé.",
+    "de": "Speichern abgebrochen."
+  },
+  "Ajustes salvos como padrão para as próximas nuvens.": {
+    "en": "Settings saved as defaults for future clouds.",
+    "es": "Ajustes guardados como predeterminados para futuras nubes.",
+    "zh-CN": "已将设置保存为以后词云的默认设置。",
+    "ja": "今後のクラウドの既定値として保存しました。",
+    "fr": "Réglages enregistrés par défaut pour les prochains nuages.",
+    "de": "Einstellungen als Standard für künftige Wolken gespeichert."
+  },
+  "Ajustes de fábrica restaurados.": {
+    "en": "Default settings restored.",
+    "es": "Ajustes de fábrica restaurados.",
+    "zh-CN": "已恢复默认设置。",
+    "ja": "初期設定に戻しました。",
+    "fr": "Réglages d’origine restaurés.",
+    "de": "Werkseinstellungen wiederhergestellt."
+  },
+  "Salvando…": {
+    "en": "Saving…",
+    "es": "Guardando…",
+    "zh-CN": "正在保存…",
+    "ja": "保存中…",
+    "fr": "Enregistrement…",
+    "de": "Wird gespeichert…"
+  },
+  "Nenhuma sugestão encontrada com os filtros atuais.": {
+    "en": "No suggestions found with the current filters.",
+    "es": "No se encontraron sugerencias con los filtros actuales.",
+    "zh-CN": "当前筛选条件下没有找到建议。",
+    "ja": "現在のフィルターでは候補が見つかりませんでした。",
+    "fr": "Aucune suggestion avec les filtres actuels.",
+    "de": "Mit den aktuellen Filtern wurden keine Vorschläge gefunden."
+  },
+  "Nenhuma palavra passou pelos filtros.": {
+    "en": "No words passed the filters.",
+    "es": "Ninguna palabra pasó los filtros.",
+    "zh-CN": "没有词语通过筛选。",
+    "ja": "フィルターを通過した単語がありません。",
+    "fr": "Aucun mot ne satisfait les filtres.",
+    "de": "Keine Wörter haben die Filter passiert."
+  },
+  "A seção final de referências foi retirada por reconhecimento do título. Desmarque a opção para incluir o texto completo.": {
+    "en": "The final references section was removed because its heading was recognized. Uncheck the option to include the full text.",
+    "es": "Se eliminó la sección final de referencias al reconocer su título. Desmarque la opción para incluir todo el texto.",
+    "zh-CN": "识别到参考文献标题，已移除末尾的参考文献部分。取消勾选该选项可包含全文。",
+    "ja": "見出しが認識されたため末尾の参考文献を除外しました。全文を含めるにはチェックを外してください。",
+    "fr": "Les références finales ont été retirées après reconnaissance du titre. Décochez l’option pour inclure le texte complet.",
+    "de": "Der letzte Literaturabschnitt wurde anhand der Überschrift entfernt. Die Option deaktivieren, um den gesamten Text einzubeziehen."
+  },
+  "Reduza a frequência mínima ou revise o texto para obter resultados.": {
+    "en": "Reduce the minimum frequency or review the text to obtain results.",
+    "es": "Reduzca la frecuencia mínima o revise el texto para obtener resultados.",
+    "zh-CN": "请降低最低频率或检查文本以获得结果。",
+    "ja": "最小頻度を下げるか、テキストを確認してください。",
+    "fr": "Réduisez la fréquence minimale ou vérifiez le texte pour obtenir des résultats.",
+    "de": "Die Mindesthäufigkeit verringern oder den Text prüfen, um Ergebnisse zu erhalten."
+  },
+  "Algumas palavras não couberam na imagem. Suas frequências continuam disponíveis no CSV.": {
+    "en": "Some words did not fit in the image. Their frequencies remain available in the CSV.",
+    "es": "Algunas palabras no caben en la imagen. Sus frecuencias siguen disponibles en el CSV.",
+    "zh-CN": "部分词语无法放入图像。它们的频率仍可在 CSV 中查看。",
+    "ja": "画像に収まらない単語があります。それらの頻度は CSV で確認できます。",
+    "fr": "Certains mots ne tiennent pas dans l’image. Leurs fréquences restent disponibles dans le CSV.",
+    "de": "Einige Wörter passen nicht in das Bild. Ihre Häufigkeiten bleiben in der CSV verfügbar."
+  },
+  "Ocorrências por artigo": {
+    "en": "Occurrences by article",
+    "es": "Apariciones por artículo",
+    "fr": "Occurrences par article",
+    "de": "Vorkommen pro Artikel",
+    "zh-CN": "每篇文章的出现次数",
+    "ja": "論文別の出現回数"
+  },
+  "Consulte uma palavra ou expressão e veja as ocorrências em cada artigo, incluindo zero.": {
+    "en": "Look up a word or expression to see occurrences in each article, including zero.",
+    "es": "Consulte una palabra o expresión para ver las apariciones en cada artículo, incluido cero.",
+    "fr": "Consultez un mot ou une expression pour voir les occurrences dans chaque article, y compris zéro.",
+    "de": "Ein Wort oder einen Ausdruck suchen, um die Vorkommen in jedem Artikel einschließlich null zu sehen.",
+    "zh-CN": "查询词语或表达，查看每篇文章中的出现次数，包括零次。",
+    "ja": "単語や表現を検索し、各論文の出現回数をゼロも含めて確認します。"
+  },
+  "Palavra ou expressão": {
+    "en": "Word or expression",
+    "es": "Palabra o expresión",
+    "fr": "Mot ou expression",
+    "de": "Wort oder Ausdruck",
+    "zh-CN": "词语或表达",
+    "ja": "単語または表現"
+  },
+  "Ex.: dados ou proteção + dados": {
+    "en": "E.g.: data or protection + data",
+    "es": "Ej.: datos o protección + datos",
+    "fr": "Ex. : données ou protection + données",
+    "de": "Z. B.: Daten oder Schutz + Daten",
+    "zh-CN": "例如：dados 或 proteção + dados",
+    "ja": "例：dados または proteção + dados"
+  },
+  "Consultar por artigo": {
+    "en": "Look up by article",
+    "es": "Consultar por artículo",
+    "fr": "Consulter par article",
+    "de": "Nach Artikel suchen",
+    "zh-CN": "按文章查询",
+    "ja": "論文別に検索"
+  },
+  "Salvar contagem CSV": {
+    "en": "Save counts CSV",
+    "es": "Guardar recuentos CSV",
+    "fr": "Enregistrer les comptes CSV",
+    "de": "Anzahlen als CSV speichern",
+    "zh-CN": "保存计数 CSV",
+    "ja": "回数を CSV で保存"
+  },
+  "Clique na nuvem para consultar por artigo": {
+    "en": "Click the cloud to look up by article",
+    "es": "Haga clic en la nube para consultar por artículo",
+    "fr": "Cliquer dans le nuage pour consulter par article",
+    "de": "Wolke anklicken, um nach Artikel zu suchen",
+    "zh-CN": "点击词云按文章查询",
+    "ja": "クラウドをクリックして論文別に検索"
+  },
+  "Com essa opção desmarcada, clicar na nuvem continua excluindo a palavra. Você também pode usar Por artigo na tabela de frequências.": {
+    "en": "When unchecked, clicking the cloud still excludes the word. You can also use By article in the frequency table.",
+    "es": "Sin marcar esta opción, hacer clic en la nube sigue excluyendo la palabra. También puede usar Por artículo en la tabla de frecuencias.",
+    "fr": "Si cette option est décochée, cliquer dans le nuage exclut toujours le mot. Vous pouvez aussi utiliser Par article dans le tableau des fréquences.",
+    "de": "Ohne diese Option schließt ein Klick das Wort weiterhin aus. Alternativ Nach Artikel in der Häufigkeitstabelle verwenden.",
+    "zh-CN": "未勾选时，点击词云仍会排除词语。也可以使用词频表中的“按文章”按钮。",
+    "ja": "未選択の場合、クラウドのクリックは従来どおり単語を除外します。頻度表の「論文別」も利用できます。"
+  },
+  "A consulta usa os filtros atuais. O mínimo de ocorrências e o limite da nuvem não escondem contagens de zero ou uma ocorrência por artigo.": {
+    "en": "The lookup uses current filters. Minimum frequency and cloud limits do not hide zero or single occurrences in individual articles.",
+    "es": "La consulta usa los filtros actuales. La frecuencia mínima y el límite de la nube no ocultan cero o una aparición en cada artículo.",
+    "fr": "La recherche utilise les filtres actuels. La fréquence minimale et la limite du nuage ne masquent pas zéro ou une occurrence par article.",
+    "de": "Die Suche verwendet die aktuellen Filter. Mindesthäufigkeit und Wolkenlimit verbergen keine null oder einzelnen Vorkommen pro Artikel.",
+    "zh-CN": "查询使用当前筛选条件。最低频率和词云数量限制不会隐藏每篇文章中的零次或一次出现。",
+    "ja": "検索は現在のフィルターを使用します。最小頻度とクラウドの上限は、各論文のゼロ回や 1 回の出現を隠しません。"
+  },
+  "Artigo": {
+    "en": "Article",
+    "es": "Artículo",
+    "fr": "Article",
+    "de": "Artikel",
+    "zh-CN": "文章",
+    "ja": "論文"
+  },
+  "Por artigo": {
+    "en": "By article",
+    "es": "Por artículo",
+    "fr": "Par article",
+    "de": "Nach Artikel",
+    "zh-CN": "按文章",
+    "ja": "論文別"
+  },
+  "Consulta": {
+    "en": "Query",
+    "es": "Consulta",
+    "fr": "Recherche",
+    "de": "Suchbegriff",
+    "zh-CN": "查询",
+    "ja": "検索語"
+  },
+  "Esta nuvem não possui a identificação dos artigos. Selecione os artigos e gere uma nova nuvem nesta versão.": {
+    "en": "This cloud has no article identifiers. Select the articles and generate a new cloud with this version.",
+    "es": "Esta nube no identifica los artículos. Seleccione los artículos y genere una nueva nube con esta versión.",
+    "fr": "Ce nuage ne contient pas les identifiants des articles. Sélectionnez les articles et créez un nouveau nuage avec cette version.",
+    "de": "Diese Wolke enthält keine Artikelzuordnung. Die Artikel auswählen und mit dieser Version eine neue Wolke erstellen.",
+    "zh-CN": "此词云没有文章标识。请选择文章，并使用此版本生成新的词云。",
+    "ja": "このクラウドには論文の識別情報がありません。論文を選択し、このバージョンで新しいクラウドを作成してください。"
+  },
+  "O texto reunido foi editado e não pode mais ser separado por artigo com segurança. Gere uma nova nuvem dos artigos para esta consulta.": {
+    "en": "The combined text was edited and can no longer be reliably separated by article. Generate a new article cloud for this lookup.",
+    "es": "El texto reunido se editó y ya no puede separarse de forma fiable por artículo. Genere una nueva nube de los artículos para esta consulta.",
+    "fr": "Le texte réuni a été modifié et ne peut plus être séparé par article de façon fiable. Créez un nouveau nuage pour cette recherche.",
+    "de": "Der zusammengeführte Text wurde bearbeitet und kann nicht mehr zuverlässig Artikeln zugeordnet werden. Für diese Suche eine neue Wolke erstellen.",
+    "zh-CN": "合并文本已被编辑，无法可靠地按文章拆分。请重新生成文章词云后查询。",
+    "ja": "結合テキストが編集され、論文ごとに正確に分けられなくなりました。検索するには新しいクラウドを作成してください。"
+  },
+  "Digite uma palavra ou uma expressão válida. Use + com a mesma ordem das palavras no texto.": {
+    "en": "Enter a valid word or expression. With +, keep the word order used in the text.",
+    "es": "Introduzca una palabra o expresión válida. Con +, mantenga el orden de las palabras del texto.",
+    "fr": "Saisissez un mot ou une expression valide. Avec +, gardez l’ordre des mots du texte.",
+    "de": "Ein gültiges Wort oder einen Ausdruck eingeben. Mit + die Wortreihenfolge im Text beibehalten.",
+    "zh-CN": "请输入有效的词语或表达。使用 + 时，保持文本中的词语顺序。",
+    "ja": "有効な単語や表現を入力してください。+ を使用する場合、本文と同じ語順にしてください。"
+  },
+  "Resultado da consulta:": {
+    "en": "Query result:",
+    "es": "Resultado de la consulta:",
+    "fr": "Résultat de la recherche :",
+    "de": "Suchergebnis:",
+    "zh-CN": "查询结果：",
+    "ja": "検索結果："
+  },
+  "{articles} artigos · {total} ocorrências": {
+    "en": "{articles} articles · {total} occurrences",
+    "es": "{articles} artículos · {total} apariciones",
+    "fr": "{articles} articles · {total} occurrences",
+    "de": "{articles} Artikel · {total} Vorkommen",
+    "zh-CN": "{articles} 篇文章 · {total} 次出现",
+    "ja": "{articles} 本の論文 · {total} 回の出現"
+  },
+  "Clique em Consultar por artigo para calcular.": {
+    "en": "Click Look up by article to calculate.",
+    "es": "Haga clic en Consultar por artículo para calcular.",
+    "fr": "Cliquez sur Consulter par article pour calculer.",
+    "de": "Zum Berechnen auf Nach Artikel suchen klicken.",
+    "zh-CN": "点击“按文章查询”进行计算。",
+    "ja": "「論文別に検索」をクリックして計算します。"
+  },
+  "Função": {
+    "en": "Function",
+    "es": "Función",
+    "fr": "Fonction",
+    "de": "Funktion",
+    "zh-CN": "功能",
+    "ja": "機能"
+  },
+  "Cria nuvens de palavras a partir de PDFs no Zotero. Selecione um ou mais artigos e use Criar nuvem de palavras. Ajuste os filtros e consulte uma palavra ou expressão para comparar ocorrências por artigo. Salve a nuvem no Zotero ou exporte a imagem e os dados.": {
+    "en": "Creates word clouds from PDFs in Zotero. Select one or more articles and use Create word cloud. Adjust the filters and look up a word or expression to compare occurrences by article. Save the cloud in Zotero or export the image and data.",
+    "es": "Crea nubes de palabras a partir de PDFs en Zotero. Seleccione uno o más artículos y use Crear nube de palabras. Ajuste los filtros y consulte una palabra o expresión para comparar apariciones por artículo. Guarde la nube en Zotero o exporte la imagen y los datos.",
+    "fr": "Crée des nuages de mots à partir de PDF dans Zotero. Sélectionnez un ou plusieurs articles et utilisez Créer un nuage de mots. Ajustez les filtres et recherchez un mot ou une expression pour comparer les occurrences par article. Enregistrez le nuage dans Zotero ou exportez l’image et les données.",
+    "de": "Erstellt Wortwolken aus PDFs in Zotero. Einen oder mehrere Artikel auswählen und Wortwolke erstellen verwenden. Filter anpassen und ein Wort oder einen Ausdruck suchen, um Vorkommen pro Artikel zu vergleichen. Die Wolke in Zotero speichern oder Bild und Daten exportieren.",
+    "zh-CN": "从 Zotero 中的 PDF 创建词云。选择一篇或多篇文章，使用“创建词云”。调整筛选条件并查询词语或表达，比较各篇文章中的出现次数。将词云保存到 Zotero，或导出图像和数据。",
+    "ja": "Zotero の PDF からワードクラウドを作成します。1 本以上の論文を選択し、「ワードクラウドを作成」を使用します。フィルターを調整して単語や表現を検索し、論文別の出現回数を比較します。Zotero に保存するか、画像やデータを書き出せます。"
+  },
+  "Ajuda": {
+    "en": "Help",
+    "es": "Ayuda",
+    "fr": "Aide",
+    "de": "Hilfe",
+    "zh-CN": "帮助",
+    "ja": "ヘルプ"
+  },
+  "Opções avançadas": {
+    "en": "Advanced options",
+    "es": "Opciones avanzadas",
+    "fr": "Options avancées",
+    "de": "Erweiterte Optionen",
+    "zh-CN": "高级选项",
+    "ja": "詳細オプション"
+  },
+  "Ferramentas avançadas": {
+    "en": "Advanced tools",
+    "es": "Herramientas avanzadas",
+    "fr": "Outils avancés",
+    "de": "Erweiterte Werkzeuge",
+    "zh-CN": "高级工具",
+    "ja": "詳細ツール"
+  },
+  "Exportar": {
+    "en": "Export",
+    "es": "Exportar",
+    "fr": "Exporter",
+    "de": "Exportieren",
+    "zh-CN": "导出",
+    "ja": "エクスポート"
+  },
+  "Imagem JPG": {
+    "en": "JPG image",
+    "es": "Imagen JPG",
+    "fr": "Image JPG",
+    "de": "JPG-Bild",
+    "zh-CN": "JPG 图像",
+    "ja": "JPG 画像"
+  },
+  "Imagem PNG": {
+    "en": "PNG image",
+    "es": "Imagen PNG",
+    "fr": "Image PNG",
+    "de": "PNG-Bild",
+    "zh-CN": "PNG 图像",
+    "ja": "PNG 画像"
+  },
+  "Imagem SVG": {
+    "en": "SVG image",
+    "es": "Imagen SVG",
+    "fr": "Image SVG",
+    "de": "SVG-Bild",
+    "zh-CN": "SVG 图像",
+    "ja": "SVG 画像"
+  },
+  "Frequências CSV": {
+    "en": "Frequencies CSV",
+    "es": "Frecuencias CSV",
+    "fr": "Fréquences CSV",
+    "de": "Häufigkeiten CSV",
+    "zh-CN": "词频 CSV",
+    "ja": "頻度 CSV"
+  },
+  "Contagem por artigo CSV": {
+    "en": "Counts by article CSV",
+    "es": "Recuentos por artículo CSV",
+    "fr": "Comptes par article CSV",
+    "de": "Anzahlen pro Artikel CSV",
+    "zh-CN": "每篇文章计数 CSV",
+    "ja": "論文別回数 CSV"
+  },
+  "Escolha uma expressão": {
+    "en": "Choose an expression",
+    "es": "Elija una expresión",
+    "fr": "Choisissez une expression",
+    "de": "Einen Ausdruck wählen",
+    "zh-CN": "选择表达",
+    "ja": "表現を選択"
+  },
+  "Adicione uma expressão para consultar.": {
+    "en": "Add an expression to look up.",
+    "es": "Añada una expresión para consultar.",
+    "fr": "Ajoutez une expression à rechercher.",
+    "de": "Einen Ausdruck für die Suche hinzufügen.",
+    "zh-CN": "请添加要查询的表达。",
+    "ja": "検索する表現を追加してください。"
+  },
+  "Excluir referências": {
+    "en": "Exclude references",
+    "es": "Excluir referencias",
+    "fr": "Exclure les références",
+    "de": "Literaturangaben ausschließen",
+    "zh-CN": "排除参考文献",
+    "ja": "参考文献を除外"
+  },
+  "O tamanho das palavras representa sua frequência no texto.": {
+    "en": "Word size represents its frequency in the text.",
+    "es": "El tamaño de las palabras representa su frecuencia en el texto.",
+    "fr": "La taille des mots représente leur fréquence dans le texte.",
+    "de": "Die Wortgröße zeigt die Häufigkeit im Text.",
+    "zh-CN": "词语大小表示其在文本中的出现频率。",
+    "ja": "単語の大きさは本文での出現頻度を表します。"
+  },
+  "Compatível com Zotero 10.": {
+    "en": "Compatible with Zotero 10.",
+    "es": "Compatible con Zotero 10.",
+    "fr": "Compatible avec Zotero 10.",
+    "de": "Kompatibel mit Zotero 10.",
+    "zh-CN": "兼容 Zotero 10。",
+    "ja": "Zotero 10 に対応。"
+  },
+  "Consulta por artigo": {
+    "en": "Article lookup",
+    "es": "Consulta por artículo",
+    "fr": "Recherche par article",
+    "de": "Suche pro Artikel",
+    "zh-CN": "按文章查询",
+    "ja": "論文別検索"
+  },
+  "Ex.: dados ou proteção de dados": {
+    "en": "E.g.: data or data protection",
+    "es": "Ej.: datos o protección de datos",
+    "fr": "Ex. : données ou protection des données",
+    "de": "Z. B.: Daten oder Datenschutz",
+    "zh-CN": "例如：数据或数据保护",
+    "ja": "例：データ、またはデータ保護"
+  },
+  "Incluir expressão na nuvem": {
+    "en": "Add expression to cloud",
+    "es": "Añadir expresión a la nube",
+    "fr": "Ajouter l’expression au nuage",
+    "de": "Ausdruck zur Wolke hinzufügen",
+    "zh-CN": "将表达加入词云",
+    "ja": "表現をクラウドに追加"
+  },
+  "Expressões incluídas na nuvem": {
+    "en": "Expressions added to cloud",
+    "es": "Expresiones añadidas a la nube",
+    "fr": "Expressions ajoutées au nuage",
+    "de": "Ausdrücke in der Wolke",
+    "zh-CN": "已加入词云的表达",
+    "ja": "クラウドに追加した表現"
+  },
+  "Uma expressão por linha": {
+    "en": "One expression per line",
+    "es": "Una expresión por línea",
+    "fr": "Une expression par ligne",
+    "de": "Ein Ausdruck pro Zeile",
+    "zh-CN": "每行一个表达",
+    "ja": "1行に1つの表現"
+  },
+  "Aplicar expressões": {
+    "en": "Apply expressions",
+    "es": "Aplicar expresiones",
+    "fr": "Appliquer les expressions",
+    "de": "Ausdrücke anwenden",
+    "zh-CN": "应用表达",
+    "ja": "表現を適用"
+  },
+  "Ocorrências das expressões na seleção": {
+    "en": "Expression counts in the selection",
+    "es": "Recuentos de expresiones en la selección",
+    "fr": "Occurrences des expressions dans la sélection",
+    "de": "Häufigkeit der Ausdrücke in der Auswahl",
+    "zh-CN": "所选文章中的表达出现次数",
+    "ja": "選択した論文での表現の出現回数"
+  },
+  "Na Consulta por artigo, digite uma palavra ou expressão. Use Incluir expressão na nuvem para também exibi-la na nuvem. As expressões ficam em Expressões incluídas na nuvem.": {
+    "en": "In Article lookup, enter a word or expression. Use Add expression to cloud to include it in the cloud as well. Expressions are listed under Expressions added to cloud.",
+    "es": "En Consulta por artículo, escriba una palabra o expresión. Use Añadir expresión a la nube para incluirla también en la nube. Las expresiones se muestran en Expresiones añadidas a la nube.",
+    "fr": "Dans Recherche par article, saisissez un mot ou une expression. Utilisez Ajouter l’expression au nuage pour l’inclure aussi dans le nuage. La liste figure dans Expressions ajoutées au nuage.",
+    "de": "Geben Sie unter Suche pro Artikel ein Wort oder einen Ausdruck ein. Mit Ausdruck zur Wolke hinzufügen können Sie ihn auch in die Wolke aufnehmen. Die Liste steht unter Ausdrücke in der Wolke.",
+    "zh-CN": "在“按文章查询”中输入词语或表达。使用“将表达加入词云”也可将其加入词云。表达列表位于“已加入词云的表达”。",
+    "ja": "「論文別検索」に単語または表現を入力します。「表現をクラウドに追加」でクラウドにも追加できます。表現の一覧は「クラウドに追加した表現」にあります。"
+  },
+  "Expressão adicionada à lista da nuvem. Use Salvar no Zotero para gravar o ajuste.": {
+    "en": "Expression added to the cloud list. Use Save to Zotero to save this change.",
+    "es": "Expresión añadida a la lista de la nube. Use Guardar en Zotero para guardar este ajuste.",
+    "fr": "Expression ajoutée à la liste du nuage. Utilisez Enregistrer dans Zotero pour conserver ce réglage.",
+    "de": "Ausdruck zur Liste der Wolke hinzugefügt. Mit In Zotero speichern wird die Änderung gespeichert.",
+    "zh-CN": "表达已加入词云列表。使用“保存到 Zotero”保存此调整。",
+    "ja": "表現をクラウドの一覧に追加しました。「Zotero に保存」で変更を保存してください。"
+  },
+  "Essa expressão já está na lista da nuvem.": {
+    "en": "This expression is already in the cloud list.",
+    "es": "Esta expresión ya está en la lista de la nube.",
+    "fr": "Cette expression figure déjà dans la liste du nuage.",
+    "de": "Dieser Ausdruck steht bereits in der Liste der Wolke.",
+    "zh-CN": "此表达已在词云列表中。",
+    "ja": "この表現はすでにクラウドの一覧にあります。"
+  },
+  "Expressões aplicadas. Use Salvar no Zotero para gravar o ajuste.": {
+    "en": "Expressions applied. Use Save to Zotero to save this change.",
+    "es": "Expresiones aplicadas. Use Guardar en Zotero para guardar este ajuste.",
+    "fr": "Expressions appliquées. Utilisez Enregistrer dans Zotero pour conserver ce réglage.",
+    "de": "Ausdrücke angewendet. Mit In Zotero speichern wird die Änderung gespeichert.",
+    "zh-CN": "表达已应用。使用“保存到 Zotero”保存此调整。",
+    "ja": "表現を適用しました。「Zotero に保存」で変更を保存してください。"
+  },
+  "Cria nuvens de palavras de um ou mais PDFs no Zotero. Ajuste os filtros na lateral, consulte palavras ou expressões por artigo e use as sugestões abaixo da busca. Inclua expressões na nuvem e use + para aceitar preposições, artigos e contrações entre os termos. Salve os ajustes no Zotero ou exporte imagens e dados.": {
+    "en": "Creates word clouds from one or more PDFs in Zotero. Adjust sidebar filters, look up words or expressions by article, and use suggestions below the search. Add expressions to the cloud and use + to accept prepositions, articles and contractions between terms. Save changes to Zotero or export images and data.",
+    "es": "Crea nubes de palabras de uno o más PDF en Zotero. Ajuste los filtros laterales, consulte palabras o expresiones por artículo y use las sugerencias bajo la búsqueda. Añada expresiones y use + para aceptar preposiciones, artículos y contracciones entre términos. Guarde los ajustes en Zotero o exporte imágenes y datos.",
+    "fr": "Crée des nuages de mots à partir d’un ou plusieurs PDF dans Zotero. Réglez les filtres latéraux, recherchez des mots ou expressions par article et utilisez les suggestions sous la recherche. Ajoutez des expressions et utilisez + pour accepter les prépositions, articles et contractions entre les termes. Enregistrez dans Zotero ou exportez images et données.",
+    "de": "Erstellt Wortwolken aus einem oder mehreren PDFs in Zotero. Stellen Sie die seitlichen Filter ein, suchen Sie Wörter oder Ausdrücke pro Artikel und verwenden Sie Vorschläge unter der Suche. Fügen Sie Ausdrücke hinzu; + akzeptiert Präpositionen, Artikel und Verschmelzungen zwischen Begriffen. Speichern Sie in Zotero oder exportieren Sie Bilder und Daten.",
+    "zh-CN": "从 Zotero 中的一个或多个 PDF 创建词云。在侧栏调整筛选条件，按文章查询词语或表达，并使用搜索框下方的建议。将表达加入词云，使用 + 接受词项间的介词、冠词及缩合形式。将调整保存到 Zotero，或导出图像和数据。",
+    "ja": "Zotero の1つ以上の PDF からワードクラウドを作成します。サイドバーでフィルターを調整し、論文別に単語や表現を検索して、検索欄の下の候補を利用します。表現を追加し、+ で語の間の前置詞・冠詞・縮約形を許容できます。変更を Zotero に保存するか、画像やデータをエクスポートします。"
+  },
+  "Na Consulta por artigo, digite uma palavra ou expressão. As sugestões frequentes ficam logo abaixo da busca. Use Incluir expressão na nuvem para adicioná-la à lista e Aplicar expressões após editar a lista. Salvar no Zotero grava os ajustes no anexo; Salvar como padrão define os ajustes das próximas nuvens. A opção de palavras na vertical e Restaurar ficam na lateral.": {
+    "en": "In Article lookup, enter a word or expression. Frequent expression suggestions are just below the search. Use Add expression to cloud to add it to the list and Apply expressions after editing the list. Save to Zotero saves changes to the attachment; Save as default sets options for future clouds. Vertical words and Restore are in the sidebar.",
+    "es": "En Consulta por artículo, escriba una palabra o expresión. Las sugerencias frecuentes están justo debajo de la búsqueda. Use Añadir expresión a la nube para añadirla a la lista y Aplicar expresiones después de editarla. Guardar en Zotero guarda los ajustes en el adjunto; Guardar como predeterminado define los ajustes futuros. Las palabras verticales y Restaurar están en la barra lateral.",
+    "fr": "Dans Recherche par article, saisissez un mot ou une expression. Les suggestions fréquentes sont sous la recherche. Utilisez Ajouter l’expression au nuage puis Appliquer les expressions après modification de la liste. Enregistrer dans Zotero conserve les réglages dans la pièce jointe ; Enregistrer par défaut définit les prochains nuages. Les mots verticaux et Réinitialiser sont dans la barre latérale.",
+    "de": "Geben Sie unter Suche pro Artikel ein Wort oder einen Ausdruck ein. Häufige Ausdrücke werden direkt unter der Suche vorgeschlagen. Fügen Sie Ausdrücke zur Wolke hinzu und wenden Sie die bearbeitete Liste an. In Zotero speichern speichert Änderungen im Anhang; Als Standard speichern legt zukünftige Einstellungen fest. Vertikale Wörter und Zurücksetzen stehen seitlich.",
+    "zh-CN": "在“按文章查询”中输入词语或表达。常见表达建议位于搜索框下方。使用“将表达加入词云”添加到列表，编辑后选择“应用表达”。“保存到 Zotero”将调整保存到附件；“保存为默认值”设置以后词云的选项。竖排词语和恢复选项位于侧栏。",
+    "ja": "「論文別検索」に単語または表現を入力します。頻出表現の候補は検索欄のすぐ下にあります。表現をクラウドの一覧に追加し、編集後に表現を適用します。「Zotero に保存」は添付ファイルに変更を保存し、デフォルト保存は今後の設定を保存します。縦書きとリセットはサイドバーにあります。"
+  },
+  "Sem +, a expressão segue a sequência escrita. Com +, aceita zero ou mais preposições, artigos e contrações entre os termos, na mesma ordem: direito + memória encontra direito à memória; proteção + dados encontra proteção de dados, dos dados e para os dados. O + não atravessa pontuação nem substitui palavras de conteúdo.": {
+    "en": "Without +, the expression follows the written sequence. With +, it accepts zero or more supported prepositions, articles and contractions between terms, in order: direito + memória matches direito à memória; proteção + dados matches proteção de dados, dos dados and para os dados. + does not cross punctuation or replace content words.",
+    "es": "Sin +, la expresión sigue la secuencia escrita. Con +, acepta cero o más preposiciones, artículos y contracciones admitidos entre términos, en orden: direito + memória encuentra direito à memória; proteção + dados encuentra proteção de dados, dos dados y para os dados. + no atraviesa puntuación ni sustituye palabras de contenido.",
+    "fr": "Sans +, l’expression suit la séquence écrite. Avec +, elle accepte zéro ou plusieurs prépositions, articles et contractions pris en charge entre les termes, dans l’ordre : direito + memória trouve direito à memória ; proteção + dados trouve proteção de dados, dos dados et para os dados. + ne traverse pas la ponctuation et ne remplace pas les mots de contenu.",
+    "de": "Ohne + folgt der Ausdruck der geschriebenen Reihenfolge. Mit + sind beliebig viele unterstützte Präpositionen, Artikel und Verschmelzungen zwischen den Begriffen in derselben Reihenfolge möglich: direito + memória findet direito à memória; proteção + dados findet proteção de dados, dos dados und para os dados. + übergeht keine Satzzeichen oder Inhaltswörter.",
+    "zh-CN": "不使用 + 时，表达按原文顺序精确匹配。使用 + 时，可按相同顺序接受词项间零个或多个受支持的介词、冠词和缩合形式：direito + memória 可匹配 direito à memória；proteção + dados 可匹配 proteção de dados、dos dados 和 para os dados。+ 不跨越标点，也不替代实义词。",
+    "ja": "+ がない場合は入力した語順に一致します。+ がある場合は、同じ語順で語の間にある対応する前置詞・冠詞・縮約形を0個以上許容します。direito + memória は direito à memória に、proteção + dados は proteção de dados、dos dados、para os dados に一致します。+ は句読点を越えず、内容語を置き換えません。"
+  }
+};
+
+
+===== ARQUIVO: icon.svg =====
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><path d="M15 55C1 55 0 30 13 26C14 3 41 1 47 22C63 20 69 52 51 55Z" fill="white" stroke="#7e8b99" stroke-width="2"/><path d="M24 26H43V30L30 42H43V47H23V43L36 31H24Z" fill="#c62828"/></svg>
+
+
+===== ARQUIVO: manifest.json =====
+{
+  "manifest_version": 2,
+  "name": "Nuvem de Palavras Z",
+  "version": "0.9.4",
+  "description": "Gera uma nuvem de palavras local a partir do PDF do artigo selecionado.",
+  "author": "Victor Hugo Levindo",
+  "applications": {
+    "zotero": {
+      "id": "nuvem-palavras@victor-levindo.local",
+      "strict_min_version": "10.0",
+      "strict_max_version": "10.0.*",
+      "update_url": "https://nuvem-palavras-zotero.invalid/updates.json"
+    }
+  },
+  "icons": {
+    "48": "icon.svg",
+    "96": "icon.svg"
+  }
+}
+
+
+===== ARQUIVO: plugin.js =====
+/* Somente o PDF selecionado é lido. Nenhuma chamada HTTP é realizada. */
+var NuvemZotero = {
+  windows: new Map(),   // janelas principais do Zotero
+  tools: new Map(),     // janelas da ferramenta, por anexo
+  active: true,
+  iconPatches: new Map(),
+
+  TOOL_URL: "chrome://nuvem-palavras/content/cloud.xhtml",
+  PREF: "extensions.nuvem-palavras.defaults",
+
+  selectedCollections(win) {
+    try {
+      return (win.ZoteroPane?.getSelectedCollections?.() || []).filter(c => c && typeof c.getChildItems === "function");
+    } catch (error) { Zotero.logError(error); return []; }
+  },
+
+  loadOptions() {
+    let saved = null;
+    try { const s = Services.prefs.getStringPref(this.PREF, ""); if (s) saved = JSON.parse(s); } catch (error) { Zotero.logError(error); }
+    return NuvemCore.mergeOptions(saved);
+  },
+
+  installOpenHandler() {
+    if (this.openWrapper) return;
+    if (typeof Zotero.FileHandlers?.open !== "function") throw new Error("O Zotero não disponibilizou o manipulador de abertura de anexos.");
+    const plugin = this;
+    this.originalOpen = Zotero.FileHandlers.open;
+    this.openWrapper = async function (item, ...args) {
+      if (plugin.active && plugin.isCloud(item)) {
+        const win = Zotero.getMainWindow() || Array.from(plugin.windows.keys())[0];
+        return plugin.openTool(win, item);
+      }
+      return plugin.originalOpen.call(this, item, ...args);
+    };
+    Zotero.FileHandlers.open = this.openWrapper;
+  },
+
+  addWindow(win) {
+    if (this.windows.has(win)) return;
+    this.installAttachmentIcon(win);
+    const doc = win.document;
+    const state = { nodes: [], listeners: [], busy: false };
+    this.windows.set(win, state);
+    const defs = [
+      ["menu_ToolsPopup", "tools", "items"],
+      ["zotero-itemmenu", "context", "items"],
+      ["zotero-collectionmenu", "collection", "collection"]
+    ];
+    for (const [parentID, suffix, kind] of defs) {
+      const parent = doc.getElementById(parentID);
+      if (!parent) continue;
+      const node = doc.createXULElement("menuitem");
+      node.id = "nuvem-zotero-" + suffix;
+      node.setAttribute("class", "menuitem-iconic");
+      node.setAttribute("image", this.iconURI);
+      node.setAttribute("label", kind === "collection" ? "Criar nuvem da coleção" : "Criar nuvem de palavras");
+      const run = () => {
+        if (kind === "collection") return this.runCollection(win);
+        const selection = win.ZoteroPane?.getSelectedItems() || [];
+        if (selection.length === 1 && this.isCloud(selection[0])) this.openTool(win, selection[0]);
+        else this.run(win);
+      };
+      const update = () => {
+        if (kind === "collection") {
+          node.disabled = state.busy || this.selectedCollections(win).length === 0;
+          return;
+        }
+        const selection = (win.ZoteroPane?.getSelectedItems() || []).filter(i => !i.isNote());
+        node.disabled = state.busy || selection.length === 0;
+        node.setAttribute("label",
+          selection.length === 1 && this.isCloud(selection[0]) ? "Abrir ferramenta da nuvem…"
+          : selection.length > 1 ? "Criar nuvem dos itens selecionados"
+          : "Criar nuvem de palavras");
+      };
+      node.addEventListener("command", run);
+      parent.addEventListener("popupshowing", update);
+      state.listeners.push([node, "command", run], [parent, "popupshowing", update]);
+      parent.appendChild(node);
+      state.nodes.push(node);
+    }
+  },
+
+  removeWindow(win) {
+    const state = this.windows.get(win);
+    if (!state) return;
+    for (const [node, name, handler] of state.listeners) node.removeEventListener(name, handler);
+    for (const node of state.nodes) node.remove();
+    this.windows.delete(win);
+  },
+
+  shutdown() {
+    this.active = false;
+    if (Zotero.FileHandlers?.open === this.openWrapper) Zotero.FileHandlers.open = this.originalOpen;
+    for (const w of Array.from(this.tools.values())) {
+      try { if (!w.closed) w.close(); } catch (error) { Zotero.logError(error); }
+    }
+    this.tools.clear();
+    for (const [proto, patch] of this.iconPatches) if (proto.getIcon === patch.wrapper) proto.getIcon = patch.original;
+    this.iconPatches.clear();
+    for (const win of Array.from(this.windows.keys())) this.removeWindow(win);
+  },
+
+  installAttachmentIcon(win) {
+    try {
+      const proto = win.require('zotero/itemTreeRow').ZoteroItemTreeRow.prototype;
+      if (this.iconPatches.has(proto)) return;
+      const original = proto.getIcon, plugin = this;
+      const wrapper = function (...args) {
+        const icon = original.apply(this, args);
+        if (!plugin.active || !plugin.isCloud(this.ref)) return icon;
+        const svg = icon.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 64 64');
+        svg.setAttribute('width', '20');
+        svg.setAttribute('height', '20');
+        svg.setAttribute('aria-label', 'Nuvem de palavras');
+        svg.style.cssText = 'width:20px;height:20px;flex-shrink:0;overflow:hidden;mask:none;background:none';
+        svg.innerHTML = "<path d=\"M15 55C1 55 0 30 13 26C14 3 41 1 47 22C63 20 69 52 51 55Z\" fill=\"white\" stroke=\"#7e8b99\" stroke-width=\"2\"/><path d=\"M24 26H43V30L30 42H43V47H23V43L36 31H24Z\" fill=\"#c62828\"/>";
+        return svg;
+      };
+      proto.getIcon = wrapper;
+      this.iconPatches.set(proto, { original, wrapper });
+      win.ZoteroPane?.itemsView?.refresh();
+    } catch (error) { Zotero.logError(error); }
+  },
+
+  async selectPDF(win, item) {
+    if (item.isAttachment()) {
+      if (item.attachmentContentType !== "application/pdf") {
+        throw new Error("Selecione um artigo com PDF anexado ou selecione diretamente o anexo PDF.");
+      }
+      return item;
+    }
+    if (!item.isRegularItem()) throw new Error("Selecione um artigo ou um anexo PDF na lista central do Zotero.");
+    const attachments = await Zotero.Items.getAsync(item.getAttachments());
+    const pdfs = attachments.filter(a => a.attachmentContentType === "application/pdf");
+    if (!pdfs.length) throw new Error("Este registro não possui um PDF anexado. Anexe o PDF do artigo e tente novamente.");
+    if (pdfs.length === 1) return pdfs[0];
+    const choice = { value: 0 };
+    const labels = pdfs.map(p => p.attachmentFilename || p.getField("title") || p.key);
+    const ok = Services.prompt.select(win, "Escolher PDF", "Este artigo tem mais de um PDF. Qual deseja analisar?", labels.length, labels, choice);
+    return ok ? pdfs[choice.value] : null;
+  },
+
+  async extractText(pdf) {
+    let text, coverage;
+    if (typeof Zotero.PDFWorker?.getFullText === "function") {
+      const result = await Zotero.PDFWorker.getFullText(pdf.id, null);
+      text = result.text;
+      coverage = Number.isFinite(result.totalPages) && Number.isFinite(result.extractedPages)
+        ? `Texto extraído de ${result.extractedPages} de ${result.totalPages} páginas do PDF.`
+        : "Texto extraído do PDF; o Zotero não informou a contagem de páginas.";
+    } else {
+      text = await pdf.attachmentText;
+      coverage = "Texto disponibilizado pelo Zotero. Nesta versão não foi possível confirmar a cobertura de todas as páginas.";
+    }
+    return { text, coverage };
+  },
+
+  async buildPayload(win, selection) {
+    if (selection.length !== 1) throw new Error("Selecione apenas um artigo ou PDF por vez.");
+    const pdf = await this.selectPDF(win, selection[0]);
+    if (!pdf) return null;
+    if (!(await pdf.getFilePathAsync())) {
+      throw new Error("O PDF não está disponível neste computador. Abra ou baixe o anexo no Zotero antes de gerar a nuvem.");
+    }
+    const article = pdf.parentID ? await Zotero.Items.getAsync(pdf.parentID) : pdf;
+    const { text, coverage } = await this.extractText(pdf);
+    if (!text || !text.trim()) {
+      throw new Error("Não foi possível extrair texto deste PDF. Ele pode estar digitalizado como imagem ou protegido. PDFs em imagem precisam de OCR antes da análise.");
+    }
+    const payload = {
+      title: article.getField("title") || "Artigo selecionado",
+      pdf: pdf.attachmentFilename || pdf.getField("title") || "PDF",
+      text,
+      documents: [NuvemArticleAnalysis.sourceRecord(article, pdf, text, 0)],
+      coverage,
+      generatedAt: new Date().toISOString(),
+      options: this.loadOptions()
+    };
+    return { payload, article };
+  },
+
+  // Vários itens: lê o primeiro PDF local de cada um e junta tudo (separado por \f).
+  async buildMultiPayload(win, items, title) {
+    const pdfs = new Map();
+    let withoutPDF = 0;
+    for (const it of items) {
+      if (it.isNote()) continue;
+      let found = null;
+      if (it.isAttachment()) {
+        if (it.attachmentContentType === "application/pdf") found = it;
+      } else if (it.isRegularItem()) {
+        for (const a of await Zotero.Items.getAsync(it.getAttachments())) {
+          if (a.attachmentContentType === "application/pdf" && await a.getFilePathAsync()) { found = a; break; }
+        }
+      }
+      if (found && await found.getFilePathAsync()) pdfs.set(found.id, found);
+      else withoutPDF++;
+    }
+    const list = Array.from(pdfs.values());
+    if (!list.length) throw new Error("Nenhum dos itens tem PDF disponível neste computador.");
+    if (list.length > 30 && !Services.prompt.confirm(win, "Nuvem de palavras", `Serão lidos ${list.length} PDFs. Isso pode levar alguns minutos. Continuar?`)) return null;
+    const texts = [];
+    const documents = [];
+    let textOffset = 0;
+    let failed = 0;
+    for (const pdf of list) {
+      try {
+        const { text } = await this.extractText(pdf);
+        if (text && text.trim()) {
+          let article = pdf;
+          try { if (pdf.parentID) article = await Zotero.Items.getAsync(pdf.parentID) || pdf; }
+          catch (error) { Zotero.logError(error); }
+          documents.push(NuvemArticleAnalysis.sourceRecord(article, pdf, text, textOffset));
+          texts.push(text);
+          textOffset += text.length + 1; // um \f entre os PDFs, como na base
+        } else failed++;
+      } catch (error) { Zotero.logError(error); failed++; }
+    }
+    if (!texts.length) throw new Error("Não foi possível extrair texto de nenhum dos PDFs. PDFs em imagem precisam de OCR.");
+    const notes = [];
+    if (withoutPDF) notes.push(`${withoutPDF} item(ns) sem PDF local ignorado(s)`);
+    if (failed) notes.push(`${failed} PDF(s) sem texto extraível ignorado(s)`);
+    const first = items.find(i => !i.isNote());
+    return {
+      title,
+      pdf: `${texts.length} PDFs`,
+      text: texts.join("\f"),
+      documents,
+      coverage: `Texto de ${texts.length} PDFs reunidos.` + (notes.length ? " " + notes.join("; ") + "." : ""),
+      generatedAt: new Date().toISOString(),
+      options: this.loadOptions(),
+      libraryID: first.libraryID
+    };
+  },
+
+  isCloud(item) {
+    return !!item && item.isAttachment() && item.attachmentContentType === "image/svg+xml"
+      && (item.attachmentFilename || "").startsWith("nuvem-palavras");
+  },
+
+  // Abre a ferramenta numa janela própria do plugin (sem actors, sem processo remoto).
+  // ctx = { item, libraryID, collectionID }: onde "Salvar no Zotero" grava.
+  openWindow(win, payload, ctx, key) {
+    const arg = {
+      json: JSON.stringify(payload),
+      save: json => this.persistCloud(win, ctx, JSON.parse(json))
+    };
+    const tool = win.openDialog(this.TOOL_URL, "", "chrome,dialog=no,resizable=yes,centerscreen,width=1280,height=900", arg);
+    this.tools.set(key, tool);
+    return tool;
+  },
+
+  async openTool(win, item) {
+    const key = item.libraryID + ":" + item.key;
+    const existing = this.tools.get(key);
+    if (existing && !existing.closed) {
+      existing.focus();
+      return true;
+    }
+    try {
+      const path = await item.getFilePathAsync();
+      if (!path) throw new Error("Baixe o anexo da nuvem antes de abrir a ferramenta.");
+      const source = await Zotero.File.getContentsAsync(path);
+      const xml = new win.DOMParser().parseFromString(source, "image/svg+xml");
+      const data = xml.querySelector('metadata[id="nuvem-zotero-data"]');
+      if (!data) throw new Error("Este anexo não contém os dados da ferramenta.");
+      const payload = JSON.parse(data.textContent);
+      if (payload.schema !== "nuvem-zotero/v1" || typeof payload.text !== "string") throw new Error("Dados da nuvem inválidos.");
+      this.openWindow(win, payload, { item }, key);
+      return true;
+    } catch (error) {
+      Zotero.logError(error);
+      Services.prompt.alert(win, "Nuvem de palavras", error.message || String(error));
+      return false;
+    }
+  },
+
+  // Grava a nuvem atual no Zotero: atualiza o anexo existente ou cria um anexo novo.
+  async persistCloud(win, ctx, payload) {
+    try {
+      Zotero.debug("[Nuvem] gravando no Zotero; anexo existente: " + !!ctx.item);
+      const owner = (win && !win.closed) ? win : Zotero.getMainWindow();
+      const cloud = NuvemCore.svg(payload, owner.document);
+      const summary = `${cloud.words.length} palavras, ${Math.round(cloud.content.length / 1024)} KB`;
+      if (ctx.item) {
+        const library = Zotero.Libraries?.get(ctx.item.libraryID);
+        if (library && (!library.editable || !library.filesEditable)) throw new Error("Esta biblioteca não permite alterar anexos.");
+        const path = await ctx.item.getFilePathAsync();
+        if (!path) throw new Error("O arquivo do anexo não está disponível neste computador.");
+        await Zotero.File.putContentsAsync(path, cloud.content);
+        const check = await Zotero.File.getContentsAsync(path);
+        if (!String(check).includes("nuvem-zotero-data")) throw new Error("A gravação não foi confirmada: o arquivo não contém os dados esperados.");
+        try { Zotero.Notifier.trigger("refresh", "item", [ctx.item.id]); } catch (error) { Zotero.logError(error); }
+        try { if (!owner.closed) await owner.ZoteroPane.selectItem(ctx.item.id); } catch (error) { Zotero.logError(error); }
+        Zotero.debug("[Nuvem] anexo atualizado: " + path);
+        return `Anexo atualizado no Zotero (${summary}).`;
+      }
+      const file = Zotero.getTempDirectory();
+      file.append("nuvem-palavras.svg");
+      file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
+      try {
+        await Zotero.File.putContentsAsync(file.path, cloud.content);
+        const params = { file: file.path, libraryID: ctx.libraryID, title: "Nuvem de palavras — " + payload.title, contentType: "image/svg+xml" };
+        if (ctx.collectionID) params.collections = [ctx.collectionID];
+        ctx.item = await Zotero.Attachments.importFromFile(params);
+        try { if (!owner.closed) await owner.ZoteroPane.selectItem(ctx.item.id); } catch (error) { Zotero.logError(error); }
+        Zotero.debug("[Nuvem] anexo criado, id " + ctx.item.id);
+        return `Nuvem salva no Zotero como anexo (${summary}).`;
+      } finally {
+        if (file.exists()) file.remove(false);
+      }
+    } catch (error) {
+      Zotero.logError(error);
+      throw error;
+    }
+  },
+
+  async saveCloud(win, result) {
+    if (!result.article.isRegularItem()) throw new Error("Crie um item pai para este PDF no Zotero e tente novamente. A nuvem precisa ficar vinculada a um artigo.");
+    const library = Zotero.Libraries?.get(result.article.libraryID);
+    if (library && (!library.editable || !library.filesEditable)) throw new Error("Esta biblioteca não permite adicionar anexos.");
+    const cloud = NuvemCore.svg(result.payload, win.document);
+    const file = Zotero.getTempDirectory();
+    file.append("nuvem-palavras.svg");
+    file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
+    try {
+      await Zotero.File.putContentsAsync(file.path, cloud.content);
+      const attachment = await Zotero.Attachments.importFromFile({
+        file: file.path,
+        parentItemID: result.article.id,
+        title: "Nuvem de palavras — " + result.payload.title,
+        contentType: "image/svg+xml"
+      });
+      if (this.active && this.windows.has(win)) await win.ZoteroPane.selectItem(attachment.id);
+      return attachment;
+    } finally {
+      if (file.exists()) file.remove(false);
+    }
+  },
+
+  async withBusy(win, fn) {
+    const state = this.windows.get(win);
+    if (!state || state.busy) return;
+    state.busy = true;
+    for (const node of state.nodes) node.disabled = true;
+    try {
+      await fn();
+    } catch (error) {
+      Zotero.logError(error);
+      if (this.active && this.windows.has(win)) Services.prompt.alert(win, "Nuvem de palavras", error.message || String(error));
+    } finally {
+      state.busy = false;
+      for (const node of state.nodes) node.disabled = false;
+    }
+  },
+
+  // Um item: cria o anexo SVG no artigo e já abre a ferramenta.
+  // Vários itens selecionados: abre a ferramenta direto (grava só se você clicar em "Salvar no Zotero").
+  async run(win) {
+    await this.withBusy(win, async () => {
+      const selection = (win.ZoteroPane.getSelectedItems() || []).filter(i => !i.isNote());
+      if (selection.length > 1) {
+        const payload = await this.buildMultiPayload(win, selection, `${selection.length} itens selecionados`);
+        if (!payload || !this.active) return;
+        const cols = this.selectedCollections(win);
+        this.openWindow(win, payload, { item: null, libraryID: payload.libraryID, collectionID: cols.length === 1 ? cols[0].id : null }, "multi:" + Date.now());
+        return;
+      }
+      const result = await this.buildPayload(win, selection);
+      if (!result || !this.active || !this.windows.has(win)) return;
+      const attachment = await this.saveCloud(win, result);
+      if (this.active) await this.openTool(win, attachment);
+    });
+  },
+
+  async runCollection(win) {
+    await this.withBusy(win, async () => {
+      const cols = this.selectedCollections(win);
+      if (!cols.length) throw new Error("Selecione uma coleção.");
+      const items = new Map();
+      for (const root of cols) {
+        for (const c of [root, ...Zotero.Collections.getByParent(root.id, true)]) {
+          for (const it of c.getChildItems()) items.set(it.id, it);
+        }
+      }
+      const list = Array.from(items.values()).filter(i => i.isRegularItem() || (i.isAttachment() && i.attachmentContentType === "application/pdf"));
+      if (!list.length) throw new Error("Esta coleção não tem itens com PDF.");
+      const title = cols.length === 1 ? "Coleção: " + cols[0].name : `${cols.length} coleções`;
+      const payload = await this.buildMultiPayload(win, list, title);
+      if (!payload || !this.active) return;
+      this.openWindow(win, payload, { item: null, libraryID: cols[0].libraryID, collectionID: cols.length === 1 ? cols[0].id : null }, "multi:" + Date.now());
+    });
+  }
+};

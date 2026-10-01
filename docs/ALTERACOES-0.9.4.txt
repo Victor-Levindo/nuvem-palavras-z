@@ -1,0 +1,17 @@
+﻿Nuvem de Palavras Z — 0.9.4 — 01/10/2026
+
+CORREÇÃO
+content/cloud.xhtml: o campo oculto corpus foi colocado antes dos scripts. Na 0.9.3 ele estava depois de todos os scripts, causando falha durante a inicialização: cloud.js tentava atribuir value em null; article-analysis-ui.js tentava registrar um evento em null. Com isso a nuvem não era desenhada.
+
+OUTRAS ALTERAÇÕES
+manifest.json, bootstrap.js, content/cloud.xhtml e content/translations.js: versão 0.9.4.
+Novo teste tests/window-load.cjs carrega o XHTML real e todos os scripts externos em ordem de leitura. Diferentemente dos testes antigos, IDs não são inventados nem disponibilizados antes de seus elementos existirem.
+
+PRESERVAÇÃO
+Nenhuma alteração nos algoritmos de contagem, regra do +, geração, extração, salvamento ou exportação em relação à 0.9.3. Preservados o posicionamento das sugestões, os controles visíveis na lateral, a retirada do editor de texto e os textos de Sobre/Ajuda.
+
+VALIDAÇÃO
+Falha reproduzida com os arquivos 0.9.3: cloud.js não encontra corpus; nuvem vazia.
+0.9.4: inicialização sem erros; desenho com canvas real; consulta proteção + dados com contagens 2 e 1; inclusão e redesenho; manipulador original de salvamento enviando texto e opções; troca de idioma.
+Sintaxe JavaScript, XHTML, campo interno antes de todos os scripts e comparação dos arquivos funcionais preservados.
+Limite: DOM e APIs do Zotero simulados; não houve execução nativa no Zotero/Windows.
