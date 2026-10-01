@@ -11,9 +11,9 @@ The interface supports Portuguese, English, Spanish, French, German, Chinese and
 
 I’m sharing version **0.9.4**. Its manifest targets Zotero 10.0.x, with Windows 64-bit and Zotero 10.0.1 as the development reference. Automated tests use simulated Zotero APIs; Feedback on compatibility and usability is welcome.
 
-Repository: https://github.com/vhloliveirapucsp-hub/nuvem-palavras-z
+Repository: https://github.com/Victor-Levindo/nuvem-palavras-z
 
-Download version 0.9.4: https://github.com/vhloliveirapucsp-hub/nuvem-palavras-z/releases/tag/v0.9.4
+Download version 0.9.4: https://github.com/Victor-Levindo/nuvem-palavras-z/releases/tag/v0.9.4
 
 To install, download the `.xpi` file, install it through Zotero’s plugin manager and restart Zotero. PDFs need extractable text; image-only PDFs require OCR.
 
@@ -29,8 +29,8 @@ Ele gera nuvens de um ou mais PDFs dentro do Zotero, permite consultar ocorrênc
 
 A interface está disponível em sete idiomas. Estou disponibilizando a **versão 0.9.4** e agradeço sugestões de uso, compatibilidade e melhorias.
 
-Repositório: https://github.com/vhloliveirapucsp-hub/nuvem-palavras-z
+Repositório: https://github.com/Victor-Levindo/nuvem-palavras-z
 
-Download da versão 0.9.4: https://github.com/vhloliveirapucsp-hub/nuvem-palavras-z/releases/tag/v0.9.4
+Download da versão 0.9.4: https://github.com/Victor-Levindo/nuvem-palavras-z/releases/tag/v0.9.4
 
 Para instalar, baixe o `.xpi`, instale pelo gerenciador de plugins e reinicie o Zotero. Se encontrar um problema, informe a versão do Zotero, o sistema operacional e os passos para reproduzir.
