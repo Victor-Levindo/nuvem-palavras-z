@@ -20,8 +20,10 @@ class Node{
  matches(s){if(s.startsWith('.'))return (this.attrs.class||'').split(' ').includes(s.slice(1));const attr=s.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);if(attr)return attr[1]in this.attrs&&(attr[2]===undefined||this.attrs[attr[1]]===attr[2]);if(s==='text.word')return this.tag==='text'&&(this.attrs.class||'').split(' ').includes('word');return this.tag===s}
  querySelectorAll(s){const all=[];for(const n of this.children){if(n.matches(s))all.push(n);all.push(...n.querySelectorAll(s))}return all}
  querySelector(s){return this.querySelectorAll(s)[0]||null}
+ get classList(){return {toggle:(name,force)=>{const classes=new Set((this.attrs.class||'').split(' ').filter(Boolean));const active=force===undefined?!classes.has(name):force;if(active)classes.add(name);else classes.delete(name);this.attrs.class=Array.from(classes).join(' ');return active;}}}
 }
 doc={documentElement:null,body:null,getElementById:id=>ids.get(id)||null,createElement:tag=>tag==='canvas'?createCanvas(1200,720):new Node(tag),createElementNS:(ns,tag)=>new Node(tag),addEventListener:(t,fn)=>(docEvents[t]??=[]).push(fn)};
+doc.querySelector=s=>doc.documentElement.querySelector(s);
 const texts=['proteção de dados. proteção para com os dados. dados dados.','proteção sob dados. dados dados.'];
 const seed=vm.createContext({console});for(const f of ['core.js','article-analysis.js'])vm.runInContext(fs.readFileSync(path.join(root,'content',f),'utf8'),seed);
 let offset=0;const payload={title:'Teste de abertura',pdf:'2 PDFs',text:texts.join('\f'),coverage:'Teste',options:seed.NuvemCore.mergeOptions({minFreq:1}),documents:texts.map((text,i)=>{const record=seed.NuvemArticleAnalysis.sourceRecord({id:i+1,getField:()=> 'Artigo '+(i+1)},{id:i+10,parentID:i+1,libraryID:1},text,offset);offset+=text.length+1;return record})};
@@ -42,3 +44,4 @@ for(const entry of tree.elements)parse(entry,null);
  assert.deepEqual(errors,[]);
  console.log('PASS: actual XHTML and all external scripts loaded in parser order; real canvas; initial cloud drawn; + query 2/1; expression included and cloud redrawn; original save handler sends text/options; language switch. DOM and Zotero APIs simulated.');
 })().catch(e=>{console.error(e);process.exitCode=1});
+

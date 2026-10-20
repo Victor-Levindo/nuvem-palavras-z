@@ -28,6 +28,7 @@ async function startup({ rootURI, id }) {
   NuvemScope = { Zotero, Services, Cc, Ci, ChromeUtils, IOUtils };
   Services.scriptloader.loadSubScript(rootURI + "content/core.js", NuvemScope);
   Services.scriptloader.loadSubScript(rootURI + "content/article-analysis.js", NuvemScope);
+  Services.scriptloader.loadSubScript(rootURI + "content/structured-data.js", NuvemScope);
   Services.scriptloader.loadSubScript(rootURI + "content/theme.js", NuvemScope);
   Services.scriptloader.loadSubScript(rootURI + "plugin.js", NuvemScope);
   Services.scriptloader.loadSubScript(rootURI + "content/main-interface.js", NuvemScope);
@@ -35,7 +36,7 @@ async function startup({ rootURI, id }) {
   NuvemPlugin.iconURI = rootURI + "icon.svg";
   NuvemPlugin.installOpenHandler();
   for (let win of Zotero.getMainWindows()) NuvemPlugin.addWindow(win);
-  Zotero.debug("[Nuvem] 0.9.4 iniciado");
+  Zotero.debug("[Nuvem] 0.10.0 iniciado");
 }
 
 function onMainWindowLoad({ window }) { NuvemPlugin?.addWindow(window); }

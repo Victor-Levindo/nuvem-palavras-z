@@ -368,13 +368,13 @@ var NuvemTranslations = {
     "fr": "La taille représente la fréquence, pas l’importance conceptuelle. Les majuscules et variantes avec ou sans accent sont regroupées ; singulier et pluriel restent séparés sauf si le regroupement est activé. Colonnes, en-têtes et extraction PDF peuvent affecter les résultats.",
     "de": "Die Wortgröße zeigt die Häufigkeit, nicht die inhaltliche Bedeutung. Großschreibung und Varianten mit oder ohne Akzent werden zusammengezählt; Singular und Plural bleiben getrennt, sofern die Gruppierung nicht aktiviert ist. Spalten, Kopfzeilen und PDF-Extraktion können die Ergebnisse beeinflussen."
   },
-  "Versão 0.9.4 · 01/10/2026": {
-    "en": "Version 0.9.4 · 2026-10-01",
-    "es": "Versión 0.9.4 · 01/10/2026",
-    "zh-CN": "版本 0.9.4 · 2026-10-01",
-    "ja": "バージョン 0.9.4 · 2026-10-01",
-    "fr": "Version 0.9.4 · 01/10/2026",
-    "de": "Version 0.9.4 · 01.10.2026"
+  "Versão 0.10.0 · 01/10/2026": {
+    "en": "Version 0.10.0 · 2026-10-01",
+    "es": "Versión 0.10.0 · 01/10/2026",
+    "zh-CN": "版本 0.10.0 · 2026-10-01",
+    "ja": "バージョン 0.10.0 · 2026-10-01",
+    "fr": "Version 0.10.0 · 01/10/2026",
+    "de": "Version 0.10.0 · 01.10.2026"
   },
   "Autor: Victor Hugo Levindo": {
     "en": "Author: Victor Hugo Levindo",

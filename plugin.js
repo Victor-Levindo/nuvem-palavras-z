@@ -1,4 +1,4 @@
-/* Somente o PDF selecionado é lido. Nenhuma chamada HTTP é realizada. */
+/* PDFs e tags manuais dos itens selecionados. Nenhuma chamada HTTP é realizada. */
 var NuvemZotero = {
   windows: new Map(),   // janelas principais do Zotero
   tools: new Map(),     // janelas da ferramenta, por anexo
@@ -44,7 +44,9 @@ var NuvemZotero = {
     const defs = [
       ["menu_ToolsPopup", "tools", "items"],
       ["zotero-itemmenu", "context", "items"],
-      ["zotero-collectionmenu", "collection", "collection"]
+      ["zotero-collectionmenu", "collection", "collection"],
+      ["zotero-itemmenu", "context-tags", "tags"],
+      ["zotero-collectionmenu", "collection-tags", "collection-tags"]
     ];
     for (const [parentID, suffix, kind] of defs) {
       const parent = doc.getElementById(parentID);
@@ -53,14 +55,20 @@ var NuvemZotero = {
       node.id = "nuvem-zotero-" + suffix;
       node.setAttribute("class", "menuitem-iconic");
       node.setAttribute("image", this.iconURI);
-      node.setAttribute("label", kind === "collection" ? "Criar nuvem da coleção" : "Criar nuvem de palavras");
+      node.setAttribute("label", kind.includes("tags") ? "Criar nuvem de palavras — Tags" : kind === "collection" ? "Criar nuvem da coleção" : "Criar nuvem de palavras");
       const run = () => {
+        if (kind.includes("tags")) return this.runTags(win, kind === "collection-tags");
         if (kind === "collection") return this.runCollection(win);
         const selection = win.ZoteroPane?.getSelectedItems() || [];
         if (selection.length === 1 && this.isCloud(selection[0])) this.openTool(win, selection[0]);
         else this.run(win);
       };
       const update = () => {
+        if (kind.includes("tags")) {
+          const selected = win.ZoteroPane?.getSelectedItems() || [];
+          node.disabled = state.busy || (kind === "collection-tags" ? this.selectedCollections(win).length === 0 : !selected.some(item => !item.isNote() && !this.isCloud(item)));
+          return;
+        }
         if (kind === "collection") {
           node.disabled = state.busy || this.selectedCollections(win).length === 0;
           return;
@@ -177,6 +185,7 @@ var NuvemZotero = {
       generatedAt: new Date().toISOString(),
       options: this.loadOptions()
     };
+    NuvemTerms.attachKeywords(payload);
     return { payload, article };
   },
 
@@ -222,7 +231,7 @@ var NuvemZotero = {
     if (withoutPDF) notes.push(`${withoutPDF} item(ns) sem PDF local ignorado(s)`);
     if (failed) notes.push(`${failed} PDF(s) sem texto extraível ignorado(s)`);
     const first = items.find(i => !i.isNote());
-    return {
+    const payload = {
       title,
       pdf: `${texts.length} PDFs`,
       text: texts.join("\f"),
@@ -232,6 +241,7 @@ var NuvemZotero = {
       options: this.loadOptions(),
       libraryID: first.libraryID
     };
+    return NuvemTerms.attachKeywords(payload);
   },
 
   isCloud(item) {
@@ -244,11 +254,31 @@ var NuvemZotero = {
   openWindow(win, payload, ctx, key) {
     const arg = {
       json: JSON.stringify(payload),
-      save: json => this.persistCloud(win, ctx, JSON.parse(json))
+      save: json => this.persistCloud(win, ctx, JSON.parse(json)),
+      selectSource: json => this.selectSource(win, JSON.parse(json))
     };
     const tool = win.openDialog(this.TOOL_URL, "", "chrome,dialog=no,resizable=yes,centerscreen,width=1280,height=900", arg);
     this.tools.set(key, tool);
     return tool;
+  },
+
+  async selectSource(win, source) {
+    const owner = win && !win.closed ? win : Zotero.getMainWindow();
+    let item = Number.isInteger(source.articleID) ? await Zotero.Items.getAsync(source.articleID) : null;
+    if (!item || item.libraryID !== source.libraryID || item.key !== source.articleKey) {
+      item = typeof Zotero.Items.getByLibraryAndKeyAsync === "function"
+        ? await Zotero.Items.getByLibraryAndKeyAsync(source.libraryID, source.articleKey) : null;
+    }
+    if (!item || item.deleted) throw new Error("O item de origem não está disponível nesta biblioteca. O título e o PDF continuam identificados na tabela.");
+    if (!owner) throw new Error("Abra a janela principal do Zotero para selecionar o item.");
+    await owner.ZoteroPane.selectItem(item.id);
+    owner.focus();
+  },
+
+  renderSavedCloud(payload, doc) {
+    if (payload.kind === "tags") return NuvemTerms.svgTags(payload, doc);
+    NuvemTerms.attachKeywords(payload);
+    return NuvemCore.svg(payload, doc);
   },
 
   async openTool(win, item) {
@@ -281,7 +311,7 @@ var NuvemZotero = {
     try {
       Zotero.debug("[Nuvem] gravando no Zotero; anexo existente: " + !!ctx.item);
       const owner = (win && !win.closed) ? win : Zotero.getMainWindow();
-      const cloud = NuvemCore.svg(payload, owner.document);
+      const cloud = this.renderSavedCloud(payload, owner.document);
       const summary = `${cloud.words.length} palavras, ${Math.round(cloud.content.length / 1024)} KB`;
       if (ctx.item) {
         const library = Zotero.Libraries?.get(ctx.item.libraryID);
@@ -301,7 +331,7 @@ var NuvemZotero = {
       file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
       try {
         await Zotero.File.putContentsAsync(file.path, cloud.content);
-        const params = { file: file.path, libraryID: ctx.libraryID, title: "Nuvem de palavras — " + payload.title, contentType: "image/svg+xml" };
+        const params = { file: file.path, libraryID: ctx.libraryID, title: (payload.kind === "tags" ? "Nuvem de tags — " : "Nuvem de palavras — ") + payload.title, contentType: "image/svg+xml" };
         if (ctx.collectionID) params.collections = [ctx.collectionID];
         ctx.item = await Zotero.Attachments.importFromFile(params);
         try { if (!owner.closed) await owner.ZoteroPane.selectItem(ctx.item.id); } catch (error) { Zotero.logError(error); }
@@ -320,7 +350,7 @@ var NuvemZotero = {
     if (!result.article.isRegularItem()) throw new Error("Crie um item pai para este PDF no Zotero e tente novamente. A nuvem precisa ficar vinculada a um artigo.");
     const library = Zotero.Libraries?.get(result.article.libraryID);
     if (library && (!library.editable || !library.filesEditable)) throw new Error("Esta biblioteca não permite adicionar anexos.");
-    const cloud = NuvemCore.svg(result.payload, win.document);
+    const cloud = this.renderSavedCloud(result.payload, win.document);
     const file = Zotero.getTempDirectory();
     file.append("nuvem-palavras.svg");
     file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
@@ -329,7 +359,7 @@ var NuvemZotero = {
       const attachment = await Zotero.Attachments.importFromFile({
         file: file.path,
         parentItemID: result.article.id,
-        title: "Nuvem de palavras — " + result.payload.title,
+        title: (result.payload.kind === "tags" ? "Nuvem de tags — " : "Nuvem de palavras — ") + result.payload.title,
         contentType: "image/svg+xml"
       });
       if (this.active && this.windows.has(win)) await win.ZoteroPane.selectItem(attachment.id);
@@ -371,6 +401,57 @@ var NuvemZotero = {
       if (!result || !this.active || !this.windows.has(win)) return;
       const attachment = await this.saveCloud(win, result);
       if (this.active) await this.openTool(win, attachment);
+    });
+  },
+
+  async buildTagPayload(items, title) {
+    const owners = new Map();
+    for (const selected of items) {
+      if (selected.deleted || selected.isNote() || this.isCloud(selected)) continue;
+      let item = selected;
+      if (selected.parentID) item = await Zotero.Items.getAsync(selected.parentID) || selected;
+      owners.set(item.libraryID + ":" + item.id, item);
+    }
+    const documents = [];
+    let withoutTags = 0;
+    for (const item of owners.values()) {
+      const sources = [item];
+      if (item.isRegularItem()) sources.push(...await Zotero.Items.getAsync(item.getAttachments()));
+      const tags = new Map();
+      for (const source of sources) {
+        if (!source || source.deleted || this.isCloud(source)) continue;
+        for (const tag of NuvemTerms.manualTags(source)) if (!tags.has(NuvemTerms.keyOf(tag))) tags.set(NuvemTerms.keyOf(tag), tag);
+      }
+      if (!tags.size) withoutTags++;
+      documents.push({articleID:item.id,articleKey:item.key,libraryID:item.libraryID,title:item.getField("title") || item.attachmentFilename || "Item",tags:Array.from(tags.values())});
+    }
+    if (!documents.some(doc => doc.tags.length)) throw new Error("Os itens selecionados não possuem tags manuais. Crie suas tags no Zotero e tente novamente.");
+    let saved = null;
+    try { const json = Services.prefs.getStringPref("extensions.nuvem-palavras.tagDefaults", ""); if (json) saved = JSON.parse(json); } catch (error) { Zotero.logError(error); }
+    const payload = {kind:"tags",title,text:"",pdf:"",documents:[],tagDocuments:documents,coverage:`Tags manuais de ${documents.length} item(ns).` + (withoutTags ? ` ${withoutTags} item(ns) sem tags manuais.` : ""),generatedAt:new Date().toISOString(),options:{...NuvemTerms.tagDefaults(),...(saved || {})},libraryID:documents[0].libraryID};
+    return {payload, article:owners.size === 1 ? Array.from(owners.values())[0] : null};
+  },
+
+  async runTags(win, collection) {
+    await this.withBusy(win, async () => {
+      const cols = this.selectedCollections(win);
+      let items, title;
+      if (collection) {
+        if (!cols.length) throw new Error("Selecione uma coleção.");
+        const unique = new Map();
+        for (const root of cols) for (const c of [root, ...Zotero.Collections.getByParent(root.id, true)]) for (const item of c.getChildItems()) unique.set(item.id,item);
+        items = Array.from(unique.values());
+        title = cols.length === 1 ? "Coleção: " + cols[0].name : `${cols.length} coleções`;
+      } else {
+        items = win.ZoteroPane.getSelectedItems() || [];
+        title = items.length === 1 ? items[0].getField("title") || "Item selecionado" : `${items.length} itens selecionados`;
+      }
+      const result = await this.buildTagPayload(items,title);
+      if (!this.active || !this.windows.has(win)) return;
+      if (!collection && result.article?.isRegularItem()) {
+        const attachment = await this.saveCloud(win,result);
+        if (this.active) await this.openTool(win,attachment);
+      } else this.openWindow(win,result.payload,{item:null,libraryID:result.payload.libraryID,collectionID:cols.length === 1 ? cols[0].id : null},"tags:"+Date.now());
     });
   },
 

@@ -52,9 +52,11 @@ function applyOptions(o) {
 }
 
 function savedDefaults() {
-  try { const s = Services.prefs.getStringPref(PREF, ''); return s ? JSON.parse(s) : null; }
+  try { const s = Services.prefs.getStringPref(optionsPref(), ''); return s ? JSON.parse(s) : null; }
   catch (e) { return null; }
 }
+
+function optionsPref() { return DATA.kind === 'tags' ? 'extensions.nuvem-palavras.tagDefaults' : PREF; }
 
 /* ---------- Desenho ---------- */
 
@@ -77,7 +79,7 @@ function drawCloud(words) {
   const svg = $('cloud');
   svg.replaceChildren();
   const title = svgElement('title');
-  title.textContent = 'Nuvem de palavras: ' + DATA.title;
+  title.textContent = (DATA.kind === 'tags' ? 'Nuvem de tags: ' : 'Nuvem de palavras: ') + DATA.title;
   svg.appendChild(title);
   svg.appendChild(svgElement('rect', { width: 1200, height: 720, fill: '#ffffff' }));
   words.forEach((w, i) => {
@@ -90,9 +92,10 @@ function drawCloud(words) {
     });
     t.textContent = w.word;
     const tip = svgElement('title');
-    tip.textContent = `${w.word}: ${w.count} ocorrências. ` + (w.compound ? 'Clique para remover a expressão.' : 'Clique para ignorar.');
+    tip.textContent = DATA.kind === 'tags' ? `${w.word}: ${w.count} itens. Clique para ver a origem.` : `${w.word}: ${w.count} ocorrências. ` + (w.compound ? 'Clique para remover a expressão.' : 'Clique para ignorar.');
     t.appendChild(tip);
     t.addEventListener('click', () => {
+      if (DATA.kind === 'tags') { window.dispatchEvent(new CustomEvent('nuvem-tag-select',{detail:w.key})); return; }
       if (w.compound) removeCompoundLine(w.specIndex);
       else {
         const before = $('exclude').value.trim();
@@ -118,7 +121,7 @@ function cell(tr, text) {
 
 function render() {
   const options = getOptions();
-  const result = NuvemCore.countWords($('corpus').value, options);
+  const result = DATA.kind === 'tags' ? NuvemTerms.countTags(DATA,options) : NuvemCore.countWords($('corpus').value, options);
   frequencies = result.rows;
   drawn = NuvemCore.cloudLayout(NuvemCore.pickRows(frequencies, options.limit), options.rotate, document);
   drawCloud(drawn);
@@ -154,6 +157,7 @@ function render() {
 
   for (const id of ['jpg-export', 'png-export', 'svg-export', 'csv-export']) $(id).disabled = frequencies.length === 0;
   err('');
+  window.dispatchEvent(new CustomEvent('nuvem-rendered'));
 }
 
 function slug() {
@@ -203,15 +207,15 @@ function guard(fn) {
   };
 }
 
-function svgSource() {
-  const clone = $('cloud').cloneNode(true);
+function svgSource(id = 'cloud') {
+  const clone = $(id).cloneNode(true);
   clone.setAttribute('xmlns', NS);
   clone.setAttribute('width', '1200');
   clone.setAttribute('height', '720');
   return '<?xml version="1.0" encoding="UTF-8"?>' + new XMLSerializer().serializeToString(clone);
 }
 
-function exportImage(format) {
+function exportImage(format, id = 'cloud', suffix = '-nuvem') {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -226,18 +230,19 @@ function exportImage(format) {
           try {
             if (!blob) throw new Error('Não foi possível gerar a imagem.');
             const bytes = new Uint8Array(await blob.arrayBuffer());
-            await saveBytes(slug() + '-nuvem.' + (format === 'jpeg' ? 'jpg' : 'png'), bytes);
+            await saveBytes(slug() + suffix + '.' + (format === 'jpeg' ? 'jpg' : 'png'), bytes);
             resolve();
           } catch (e) { reject(e); }
         }, 'image/' + format, .95);
       } catch (e) { reject(e); }
     };
     img.onerror = () => reject(new Error('Não foi possível renderizar a imagem.'));
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgSource());
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgSource(id));
   });
 }
 
 $('csv-export').addEventListener('click', guard(async () => {
+  if (DATA.kind === 'tags') { await saveBytes(slug() + '-tags.csv',new TextEncoder().encode(NuvemTerms.tagsCSV(DATA,undefined,getOptions()))); return; }
   const quote = s => '"' + String(s).replace(/"/g, '""') + '"';
   const csv = '\ufeffPalavra;Ocorrências\r\n' + frequencies.map(r => quote(r.word) + ';' + r.count).join('\r\n');
   await saveBytes(slug() + '-frequencias.csv', new TextEncoder().encode(csv));
@@ -275,12 +280,12 @@ $('save-zotero').addEventListener('click', async () => {
 });
 
 $('save-defaults').addEventListener('click', guard(async () => {
-  Services.prefs.setStringPref(PREF, JSON.stringify(getOptions()));
+  Services.prefs.setStringPref(optionsPref(), JSON.stringify(getOptions()));
   msg('Ajustes salvos como padrão para as próximas nuvens.');
 }));
 $('reset-defaults').addEventListener('click', guard(async () => {
-  try { Services.prefs.clearUserPref(PREF); } catch (e) { /* já estava limpo */ }
-  applyOptions(NuvemCore.defaults());
+  try { Services.prefs.clearUserPref(optionsPref()); } catch (e) { /* já estava limpo */ }
+  applyOptions(DATA.kind === 'tags' ? NuvemTerms.tagDefaults() : NuvemCore.defaults());
   render();
   msg('Ajustes de fábrica restaurados.');
 }));

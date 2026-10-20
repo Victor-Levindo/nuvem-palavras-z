@@ -56,6 +56,7 @@ footer{font-size:12px;color:var(--muted);margin-top:20px}
 #corpus{min-height:220px}
 </style>
 <link rel="stylesheet" href="brand.css"/>
+<link rel="stylesheet" href="structured.css"/>
 </head>
 <body id="nuvem-interface-root">
 <main>
@@ -96,6 +97,11 @@ footer{font-size:12px;color:var(--muted);margin-top:20px}
 <div class="row"><button id="save-defaults" title="Guarda filtros, palavras ignoradas e expressões para as próximas nuvens" data-i18n="Salvar como padrão" data-i18n-title="Guarda filtros, palavras ignoradas e expressões para as próximas nuvens">Salvar como padrão</button><button id="reset-defaults" data-i18n="Restaurar">Restaurar</button></div>
 </aside>
 <section class="panel visual">
+<div class="cloud-tabs" role="tablist" aria-label="Nuvens" data-i18n-aria-label="Nuvens">
+<button id="text-cloud-tab" type="button" role="tab" aria-selected="true" aria-controls="text-cloud-panel" tabindex="0" data-i18n="Nuvem de palavras">Nuvem de palavras</button>
+<button id="keyword-cloud-tab" type="button" role="tab" aria-selected="false" aria-controls="keyword-cloud-panel" tabindex="-1" data-i18n="Palavras-chave">Palavras-chave</button>
+</div>
+<div id="text-cloud-panel" role="tabpanel" aria-labelledby="text-cloud-tab">
 <div class="visualhead">
   <h2 style="margin:0" data-i18n="Palavras mais frequentes">Palavras mais frequentes</h2>
   <div class="actions">
@@ -131,25 +137,52 @@ footer{font-size:12px;color:var(--muted);margin-top:20px}
 </details></section><details><summary data-i18n="Ver tabela de frequências">Ver tabela de frequências</summary>
 <p class="muted" data-i18n="Todas as palavras que passam pelos filtros, em ordem de frequência. A tabela mostra as primeiras 500; o CSV contém todas.">Todas as palavras que passam pelos filtros, em ordem de frequência. A tabela mostra as primeiras 500; o CSV contém todas.</p>
 <div class="tablewrap"><table><thead><tr><th data-i18n="Palavra">Palavra</th><th data-i18n="Ocorrências">Ocorrências</th><th data-i18n="Por artigo">Por artigo</th></tr></thead><tbody id="frequencies"/></table></div></details>
+</div>
+<section id="tag-origins" class="term-origins" aria-labelledby="tag-origins-title" hidden="hidden">
+<h2 id="tag-origins-title" data-i18n="Origem da tag">Origem da tag</h2><p id="tag-origin-summary" role="status"/>
+<div class="tablewrap"><table><thead><tr><th data-i18n="Item">Item</th><th data-i18n="Identificador do item">Identificador do item</th><th data-i18n="Ver no Zotero">Ver no Zotero</th></tr></thead><tbody id="tag-origin-rows"/></table></div>
+</section>
+<section id="keyword-cloud-panel" role="tabpanel" aria-labelledby="keyword-cloud-tab" hidden="hidden">
+<div class="visualhead"><h2 data-i18n="Palavras-chave declaradas pelos autores">Palavras-chave declaradas pelos autores</h2><div class="actions">
+<button id="keyword-save" type="button" data-i18n="Salvar no Zotero">Salvar no Zotero</button>
+<details class="keyword-export"><summary data-i18n="Exportar">Exportar</summary><div class="keyword-export-options"><button id="keyword-png" type="button" data-i18n="Imagem PNG">Imagem PNG</button><button id="keyword-jpg" type="button" data-i18n="Imagem JPG">Imagem JPG</button><button id="keyword-svg" type="button" data-i18n="Imagem SVG">Imagem SVG</button><button id="keyword-csv" type="button" data-i18n="Palavras-chave e origens CSV">Palavras-chave e origens CSV</button></div></details>
+</div></div>
+<p class="muted" data-i18n="O tamanho dos termos representa quantos artigos os declaram como palavras-chave. Expressões completas são preservadas; traduções permanecem separadas.">O tamanho dos termos representa quantos artigos os declaram como palavras-chave. Expressões completas são preservadas; traduções permanecem separadas.</p>
+<p class="muted" data-i18n="As ocorrências são contadas no texto integral extraído de todos os PDFs analisados, incluindo as listas de palavras-chave. Maiúsculas e acentos são agrupados.">As ocorrências são contadas no texto integral extraído de todos os PDFs analisados, incluindo as listas de palavras-chave. Maiúsculas e acentos são agrupados.</p>
+<p id="keyword-summary" role="status"/><p id="keyword-message" class="muted" role="status"/>
+<label class="keyword-limit"><span data-i18n="Termos na nuvem">Termos na nuvem</span><input id="keyword-limit" type="range" min="15" max="150" step="15" value="90"/><output id="keyword-limit-value">90</output></label>
+<svg xmlns="http://www.w3.org/2000/svg" id="keyword-cloud" viewBox="0 0 1200 720" role="img" aria-label="Nuvem de palavras-chave" data-i18n-aria-label="Nuvem de palavras-chave"/>
+<p class="muted" data-i18n="Clique em um termo para consultar os artigos e PDFs de origem.">Clique em um termo para consultar os artigos e PDFs de origem.</p>
+<div class="tablewrap"><table><thead><tr><th data-i18n="Palavra-chave">Palavra-chave</th><th data-i18n="Artigos que a declaram">Artigos que a declaram</th><th data-i18n="Ocorrências nos textos">Ocorrências nos textos</th><th data-i18n="Origem">Origem</th></tr></thead><tbody id="keyword-rows"/></table></div>
+<section id="keyword-origins" class="term-origins" aria-labelledby="keyword-origin-title" hidden="hidden"><h2 id="keyword-origin-title" data-i18n="Origem da palavra-chave">Origem da palavra-chave</h2><p id="keyword-origin-summary" role="status"/>
+<div class="tablewrap"><table><thead><tr><th data-i18n="Artigo">Artigo</th><th data-i18n="Identificador do artigo">Identificador do artigo</th><th data-i18n="PDF">PDF</th><th data-i18n="Declarada neste PDF?">Declarada neste PDF?</th><th data-i18n="Ocorrências neste PDF">Ocorrências neste PDF</th><th data-i18n="Lista declarada no PDF">Lista declarada no PDF</th><th data-i18n="Ver no Zotero">Ver no Zotero</th></tr></thead><tbody id="keyword-origin-rows"/></table></div></section>
+<details id="keyword-coverage"><summary data-i18n="Conferir identificação por artigo">Conferir identificação por artigo</summary><div class="tablewrap"><table><thead><tr><th data-i18n="Artigo">Artigo</th><th data-i18n="PDF">PDF</th><th data-i18n="Palavras-chave identificadas">Palavras-chave identificadas</th></tr></thead><tbody id="keyword-coverage-rows"/></table></div></details>
+<p id="keyword-export-message" class="muted" role="status"/>
+</section>
 </section>
 </div>
 <footer data-i18n="O tamanho das palavras representa sua frequência no texto.">O tamanho das palavras representa sua frequência no texto.</footer>
 <section id="about-panel" class="panel" hidden="hidden" aria-labelledby="about-title">
 <h2 id="about-title" data-i18n="Sobre">Sobre</h2><p><strong>Nuvem de Palavras Z</strong></p>
-<p data-i18n="Versão 0.9.4 · 01/10/2026">Versão 0.9.4 · 01/10/2026</p><p data-i18n="Autor: Victor Hugo Levindo">Autor: Victor Hugo Levindo</p>
+<p data-i18n="Versão 0.10.0 · 01/10/2026">Versão 0.10.0 · 01/10/2026</p><p data-i18n="Autor: Victor Hugo Levindo">Autor: Victor Hugo Levindo</p>
 <p data-i18n="Compatível com Zotero 10.">Compatível com Zotero 10.</p>
 <h3 data-i18n="Função">Função</h3><p data-i18n="Cria nuvens de palavras de um ou mais PDFs no Zotero. Ajuste os filtros na lateral, consulte palavras ou expressões por artigo e use as sugestões abaixo da busca. Inclua expressões na nuvem e use + para aceitar preposições, artigos e contrações entre os termos. Salve os ajustes no Zotero ou exporte imagens e dados.">Cria nuvens de palavras de um ou mais PDFs no Zotero. Ajuste os filtros na lateral, consulte palavras ou expressões por artigo e use as sugestões abaixo da busca. Inclua expressões na nuvem e use + para aceitar preposições, artigos e contrações entre os termos. Salve os ajustes no Zotero ou exporte imagens e dados.</p><p data-i18n="Idiomas da interface: português, inglês, espanhol, francês, alemão, chinês e japonês. Os filtros de palavras são configurados separadamente.">Idiomas da interface: português, inglês, espanhol, francês, alemão, chinês e japonês. Os filtros de palavras são configurados separadamente.</p>
+<p data-i18n="Novidades: nuvem de tags manuais dos itens e coleções; aba automática de palavras-chave dos PDFs, com duas contagens e identificação das origens.">Novidades: nuvem de tags manuais dos itens e coleções; aba automática de palavras-chave dos PDFs, com duas contagens e identificação das origens.</p>
 <button id="about-close" type="button" data-i18n="Fechar">Fechar</button></section>
 <section id="help-panel" class="panel compact-help" hidden="hidden" aria-labelledby="help-title"><h2 data-i18n="Ajuda" id="help-title">Ajuda</h2><p data-i18n="Na Consulta por artigo, digite uma palavra ou expressão. As sugestões frequentes ficam logo abaixo da busca. Use Incluir expressão na nuvem para adicioná-la à lista e Aplicar expressões após editar a lista. Salvar no Zotero grava os ajustes no anexo; Salvar como padrão define os ajustes das próximas nuvens. A opção de palavras na vertical e Restaurar ficam na lateral." class="muted">Na Consulta por artigo, digite uma palavra ou expressão. As sugestões frequentes ficam logo abaixo da busca. Use Incluir expressão na nuvem para adicioná-la à lista e Aplicar expressões após editar a lista. Salvar no Zotero grava os ajustes no anexo; Salvar como padrão define os ajustes das próximas nuvens. A opção de palavras na vertical e Restaurar ficam na lateral.</p><p class="muted" data-i18n="Separe por vírgula ou linha. Clique numa palavra da nuvem para ignorá-la.">Separe por vírgula ou linha. Clique numa palavra da nuvem para ignorá-la.</p>
 <p class="muted" data-i18n="Sem +, a expressão segue a sequência escrita. Com +, aceita zero ou mais preposições, artigos e contrações entre os termos, na mesma ordem: direito + memória encontra direito à memória; proteção + dados encontra proteção de dados, dos dados e para os dados. O + não atravessa pontuação nem substitui palavras de conteúdo.">Sem +, a expressão segue a sequência escrita. Com +, aceita zero ou mais preposições, artigos e contrações entre os termos, na mesma ordem: direito + memória encontra direito à memória; proteção + dados encontra proteção de dados, dos dados e para os dados. O + não atravessa pontuação nem substitui palavras de conteúdo.</p>
 <p class="muted" data-i18n="Com essa opção desmarcada, clicar na nuvem continua excluindo a palavra. Você também pode usar Por artigo na tabela de frequências.">Com essa opção desmarcada, clicar na nuvem continua excluindo a palavra. Você também pode usar Por artigo na tabela de frequências.</p>
 <p class="muted" data-i18n="A consulta usa os filtros atuais. O mínimo de ocorrências e o limite da nuvem não escondem contagens de zero ou uma ocorrência por artigo.">A consulta usa os filtros atuais. O mínimo de ocorrências e o limite da nuvem não escondem contagens de zero ou uma ocorrência por artigo.</p>
-<p data-i18n="O tamanho das palavras representa sua frequência no texto. A nuvem não identifica a importância conceitual dos termos. Maiúsculas e variantes com/sem acento são contadas juntas; formas no singular e plural permanecem separadas. Texto em colunas, cabeçalhos e extração de PDF podem afetar os resultados.">O tamanho das palavras representa sua frequência no texto. A nuvem não identifica a importância conceitual dos termos. Maiúsculas e variantes com/sem acento são contadas juntas; formas no singular e plural permanecem separadas. Texto em colunas, cabeçalhos e extração de PDF podem afetar os resultados.</p><button data-i18n="Fechar" id="help-close" type="button">Fechar</button></section></main>
+<p data-i18n="O tamanho das palavras representa sua frequência no texto. A nuvem não identifica a importância conceitual dos termos. Maiúsculas e variantes com/sem acento são contadas juntas; formas no singular e plural permanecem separadas. Texto em colunas, cabeçalhos e extração de PDF podem afetar os resultados.">O tamanho das palavras representa sua frequência no texto. A nuvem não identifica a importância conceitual dos termos. Maiúsculas e variantes com/sem acento são contadas juntas; formas no singular e plural permanecem separadas. Texto em colunas, cabeçalhos e extração de PDF podem afetar os resultados.</p>
+<p id="keyword-help" data-i18n="A aba Palavras-chave já vem pronta com as listas declaradas nos PDFs analisados. Ver origem identifica cada artigo e PDF, incluindo declaração e ocorrências. Confira as listas reconhecidas em Conferir identificação por artigo.">A aba Palavras-chave já vem pronta com as listas declaradas nos PDFs analisados. Ver origem identifica cada artigo e PDF, incluindo declaração e ocorrências. Confira as listas reconhecidas em Conferir identificação por artigo.</p>
+<p id="tags-help" hidden="hidden" data-i18n="A nuvem de tags usa apenas tags manuais do registro e de seus anexos, sem exigir PDF. Expressões permanecem inteiras, e cada tag conta uma vez por registro. Clique na tag ou em Ver origem para consultar seus itens. Para ignorar tags, escreva uma tag completa por linha na lateral.">A nuvem de tags usa apenas tags manuais do registro e de seus anexos, sem exigir PDF. Expressões permanecem inteiras, e cada tag conta uma vez por registro. Clique na tag ou em Ver origem para consultar seus itens. Para ignorar tags, escreva uma tag completa por linha na lateral.</p>
+<button data-i18n="Fechar" id="help-close" type="button">Fechar</button></section></main>
 <textarea id="corpus" spellcheck="false" aria-label="Texto do artigo" hidden="hidden" readonly="readonly" aria-hidden="true" tabindex="-1"/>
 <script src="core.js"/>
-<script src="article-analysis.js"/><script src="theme.js"/>
+<script src="article-analysis.js"/><script src="structured-data.js"/><script src="theme.js"/>
 <script src="cloud.js"/>
 <script src="translations.js"/>
+<script src="structured-translations.js"/>
 <script src="interface.js"/>
-<script src="article-analysis-ui.js"/><script src="simple-interface.js"/></body>
+<script src="article-analysis-ui.js"/><script src="simple-interface.js"/><script src="structured-ui.js"/></body>
 </html>

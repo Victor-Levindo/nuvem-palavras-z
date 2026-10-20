@@ -2,9 +2,9 @@
 
 **Plugin para Zotero: explore textos de PDFs, tags e palavras-chave por meio de nuvens de palavras e consultas por artigo.**
 
-Autor: **Victor Hugo Levindo** · Versão publicada neste repositório: **0.9.4**.
+Autor: **Victor Hugo Levindo** · Versão publicada neste repositório: **0.10.0**.
 
-Visualize o vocabulário de um ou mais PDFs, investigue palavras e expressões em cada artigo e guarde os ajustes numa nuvem vinculada ao Zotero. A entrega 0.10.0 amplia essa exploração para tags manuais do Zotero e palavras-chave declaradas pelos autores nos PDFs; veja as diferenças e a disponibilidade abaixo.
+Visualize o vocabulário de um ou mais PDFs, investigue palavras e expressões em cada artigo e guarde os ajustes numa nuvem vinculada ao Zotero. A versão 0.10.0 amplia essa exploração para tags manuais do Zotero e palavras-chave declaradas pelos autores nos PDFs.
 
 ![Exemplo de nuvem com texto fictício](docs/images/exemplo-nuvem.png)
 
@@ -12,7 +12,7 @@ Visualize o vocabulário de um ou mais PDFs, investigue palavras e expressões e
 
 ## Instalar
 
-1. Baixe o [instalador nuvem-palavras-z-0.9.4.xpi](https://github.com/Victor-Levindo/nuvem-palavras-z/releases/download/v0.9.4/nuvem-palavras-z-0.9.4.xpi) na [página da versão 0.9.4](https://github.com/Victor-Levindo/nuvem-palavras-z/releases/tag/v0.9.4).
+1. Baixe o [instalador nuvem-palavras-z-0.10.0.xpi](https://github.com/Victor-Levindo/nuvem-palavras-z/releases/download/v0.10.0/nuvem-palavras-z-0.10.0.xpi) na [página da versão 0.10.0](https://github.com/Victor-Levindo/nuvem-palavras-z/releases/tag/v0.10.0).
 2. No Zotero, abra **Ferramentas → Plugins** e instale o arquivo `.xpi` a partir do gerenciador de plugins.
 3. Reinicie o Zotero.
 
@@ -48,16 +48,16 @@ A entrega da **0.10.0**, registrada em **6 de outubro de 2026**, acrescenta duas
 A aba busca as palavras-chave **declaradas pelos autores no texto extraído dos PDFs**. Elas são diferentes das tags criadas manualmente no Zotero. O recurso não propõe novas palavras-chave por interpretação do conteúdo.
 
 - **Artigos declarantes:** quantos artigos apresentam o termo em sua lista de palavras-chave. Uma repetição na lista do mesmo artigo não conta como outro artigo.
-- **Ocorrências no texto:** frequência do termo nos textos analisados; o total pode incluir artigos que usam o termo sem declará-lo como palavra-chave.
+- **Ocorrências no texto:** frequência do termo nos textos analisados, incluindo a própria lista de palavras-chave; o total pode incluir artigos que usam o termo sem declará-lo como palavra-chave.
 - **Origem:** permite verificar de qual artigo/PDF vem a declaração e consultar as contagens individuais.
 
 A identificação depende do texto extraível e do reconhecimento da lista de palavras-chave; não há garantia de detecção em todos os PDFs. PDFs somente em imagem precisam de OCR.
 
-### Disponibilidade da 0.10.0
+### Publicação e verificação da 0.10.0
 
-O instalador 0.10.0 foi entregue separadamente, mas **a versão publicada para download neste repositório continua sendo a 0.9.4**. A tabela documenta a entrega 0.10.0; o código-fonte, o manifesto e o instalador publicados aqui ainda correspondem à 0.9.4.
+A versão **0.10.0** reúne o código-fonte atualizado, o instalador XPI e as notas de versão. A [0.9.4](https://github.com/Victor-Levindo/nuvem-palavras-z/releases/tag/v0.9.4) continua disponível no histórico.
 
-Na entrega da 0.10.0, foram registrados testes com ambiente e APIs do Zotero simulados, incluindo contagens, controles, salvamento, CSV e fluxos de uso. A instalação e a interface no Zotero desktop ainda precisam de verificação nativa. Esta revisão da documentação não realizou uma nova validação do instalador 0.10.0.
+Antes desta publicação, foram verificados a integridade do ZIP/XPI, a versão do manifesto, a sintaxe dos scripts JavaScript e sete testes automatizados. Os testes cobrem contagem, conectores, dados enviados pelo plugin, consulta por artigo, controles, carregamento do XHTML e tags/palavras-chave com origem e CSV. O ambiente e as APIs do Zotero são simulados; a instalação e a interface no Zotero desktop ainda precisam de verificação nativa.
 
 O histórico das alterações está em [CHANGELOG.md](CHANGELOG.md).
 
@@ -84,7 +84,7 @@ A lista inclui preposições, artigos e contrações do português, como `a`, `�
 
 O manifesto declara **Zotero 10.0.x**. A referência de desenvolvimento fornecida pelo autor é **Windows 64-bit com Zotero 10.0.1**.
 
-Na versão 0.9.4, passaram os testes automatizados de carregamento, contagem, consulta, metadados, envio dos dados de salvamento e troca de idioma. O DOM e as APIs do Zotero são simulados nesses testes; não equivalem a validação nativa da versão em todos os sistemas. A versão 0.9.3 tinha uma falha de ordem de carregamento, corrigida na 0.9.4.
+Na versão 0.10.0, passaram os sete testes automatizados descritos em [docs/TESTES.md](docs/TESTES.md), incluindo carregamento, contagens, consulta, metadados, salvamento, troca de idioma e análise de tags/palavras-chave. O DOM e as APIs do Zotero são simulados nesses testes; não equivalem a validação nativa da versão em todos os sistemas. A versão 0.9.3 tinha uma falha de ordem de carregamento, corrigida na 0.9.4.
 
 - PDFs em imagem precisam conter texto reconhecido por OCR para a análise.
 - Somente PDFs efetivamente analisados entram nas contagens.
@@ -106,16 +106,17 @@ O código do plugin está na raiz e em `content/`. Os arquivos publicados em `di
 python3 scripts/build.py
 ```
 
-Os testes locais e suas dependências estão descritos em [docs/TESTES.md](docs/TESTES.md). O código completo também pode ser lido em [um único TXT](docs/CODIGO-COMPLETO-0.9.4.txt).
+Os testes locais e suas dependências estão descritos em [docs/TESTES.md](docs/TESTES.md). O código completo da 0.10.0 também pode ser lido em [um único TXT](docs/CODIGO-COMPLETO-0.10.0.txt).
 
 ---
 
 ## English
 
-**Nuvem de Palavras Z** creates word clouds from one or more PDFs in Zotero and lets users look up term or expression counts by article. It includes phrase suggestions, optional phrase grouping in the cloud, an internal cloud-adjustment window, and JPG/PNG/SVG/CSV exports.
+**Nuvem de Palavras Z** creates word clouds from one or more PDFs in Zotero and lets users look up term or expression counts by article. Version 0.10.0 also adds manual-tag clouds and an automatic tab for author-declared keywords found in PDF text, with declaring-article counts, text occurrences, source details and CSV exports. It includes phrase suggestions, optional phrase grouping in the cloud, an internal cloud-adjustment window, and JPG/PNG/SVG/CSV exports.
 
 Download the `.xpi` installer above, install it through Zotero's plugin manager, and restart Zotero. The manifest targets Zotero 10.0.x. The development reference is Windows 64-bit with Zotero 10.0.1. Automated tests use simulated Zotero APIs and do not establish native compatibility on every platform.
 
 The `+` operator accepts supported connectors between terms in their original order. For example, `proteção + dados` matches `proteção de dados` and `proteção dos dados`. Interface languages are Portuguese, English, Spanish, French, German, Chinese and Japanese; linguistic filters are configured separately.
 
 Please report issues with your Zotero version, operating system, plugin version, steps to reproduce and any error message.
+

@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Nuvem de Palavras Z",
-  "version": "0.9.4",
-  "description": "Gera uma nuvem de palavras local a partir do PDF do artigo selecionado.",
+  "version": "0.10.0",
+  "description": "Gera nuvens de palavras dos PDFs, palavras-chave declaradas pelos autores e tags manuais dos itens e coleções do Zotero.",
   "author": "Victor Hugo Levindo",
   "applications": {
     "zotero": {

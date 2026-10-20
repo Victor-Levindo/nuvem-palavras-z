@@ -1,8 +1,8 @@
 # Alterações
 
-## 0.10.0 — entrega registrada em 2026-10-06
+## 0.10.0 — publicação em 2026-10-20 (entrega inicial em 2026-10-06)
 
-**Disponibilidade:** entregue separadamente. Ainda não publicada como release neste repositório, cujo código-fonte, manifesto e download continuam na 0.9.4.
+**Disponibilidade:** código-fonte e instalador XPI publicados na [release v0.10.0](https://github.com/Victor-Levindo/nuvem-palavras-z/releases/tag/v0.10.0). A release 0.9.4 permanece no histórico.
 
 ### Adicionado em relação à 0.9.4
 
@@ -14,19 +14,24 @@
 ### Regras de contagem
 
 - Um artigo conta uma vez como declarante de cada termo, mesmo que o termo se repita em sua lista de palavras-chave.
-- As ocorrências no texto podem incluir artigos que usam o termo sem declará-lo como palavra-chave.
+- As ocorrências incluem a própria lista declarada e podem incluir artigos que usam o termo sem declará-lo como palavra-chave.
 - A identificação das palavras-chave depende do texto extraível e do reconhecimento da lista no PDF. Documentos somente em imagem precisam de OCR.
 
 ### Recursos preservados
 
 A nuvem do texto dos PDFs, a consulta por artigo, as expressões compostas, as sugestões de expressões, os filtros, o salvamento e as exportações já existiam na 0.9.4. Não são novidades da 0.10.0.
 
-### Validação registrada na entrega
+### Verificações antes da publicação
 
-Foram registrados testes de contagem, controles, salvamento, exportação CSV e fluxos com ambiente/APIs do Zotero simulados. A instalação e a interface nativa ainda precisam de verificação no Zotero desktop. Esta atualização do histórico não realizou uma nova validação do instalador.
+- Integridade do arquivo XPI e manifesto 0.10.0.
+- Sintaxe de todos os scripts JavaScript do pacote.
+- Sete testes automatizados: contagens, conectores, payload do plugin, consulta por artigo, controles, carregamento real dos scripts do XHTML e análise de tags/palavras-chave (deduplicação por artigo, ocorrências, origem e CSV).
+- Os testes usam DOM/APIs do Zotero simulados. A instalação e a interface nativa ainda precisam de verificação no Zotero desktop.
+- Os testes da 0.9.4 foram adaptados para carregar o módulo novo e simular os métodos DOM adicionais; o código de execução do instalador entregue foi preservado.
 
 ## 0.9.4 — 2026-10-01
 
 Corrige a falha de inicialização da 0.9.3: o campo interno de texto agora existe antes da execução dos scripts que geram a nuvem. Mantém a reorganização da interface, as sugestões abaixo da busca e a regra ampliada de conectores do `+`.
 
 Inclui um teste que carrega o XHTML e os scripts reais na ordem de leitura, com DOM e APIs do Zotero simulados, verificando desenho inicial, consulta, inclusão de expressão, envio dos ajustes pelo salvamento original e idioma.
+

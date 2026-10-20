@@ -1,5 +1,6 @@
 /* Controles adicionais. As funções e eventos originais de cloud.js permanecem intactos. */
 (() => {
+  if (DATA.kind === 'tags') return;
   const htmlNS = 'http://www.w3.org/1999/xhtml';
   const el = id => document.getElementById(id);
   const input = el('comparison-query');

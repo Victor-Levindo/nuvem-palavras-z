@@ -1,0 +1,81 @@
+NUVEM DE PALAVRAS Z — 0.10.0
+Autor: Victor Hugo Levindo
+Base: arquivo 0.9.4 fornecido pelo autor.
+Compatibilidade mantida: Zotero 10.0.x.
+
+INSTALAÇÃO
+Instale nuvem-palavras-z-0.10.0.xpi pelo gerenciador de plugins do Zotero,
+usando a opção de instalar plugin a partir de um arquivo. O identificador do
+plugin foi mantido para atualizar a instalação existente.
+
+NUVEM DE TEXTO
+A opção atual de criar nuvem, filtros, expressões com +, consulta por artigo,
+cores, exportação e salvamento continuam disponíveis. A contagem da nuvem de
+texto e o módulo de consulta por artigo foram preservados.
+
+NUVEM DE TAGS
+Clique com o botão direito nos itens ou na coleção e escolha:
+Criar nuvem de palavras — Tags.
+Inclui somente tags manuais do Zotero (tipo 0, ou tipo manual padrão).
+Inclui tags manuais do registro e de seus anexos. Não modifica nenhuma tag.
+Não exige PDF nem acesso à internet. Expressões completas permanecem inteiras.
+Uma tag é contada uma vez por registro, mesmo se também estiver em um anexo.
+Coleções incluem subcoleções; registros repetidos são contados uma vez.
+Clique na tag ou em Ver origem para identificar os registros correspondentes.
+Para ignorar tags, digite uma tag completa por linha. Tags podem conter vírgulas.
+Os padrões de tags são salvos separadamente dos padrões da nuvem de texto.
+
+PALAVRAS-CHAVE
+Ao criar a nuvem de texto, a aba Palavras-chave é preparada automaticamente.
+Não é necessário executar uma segunda análise. Funciona para um artigo,
+vários itens selecionados e coleções, usando os PDFs lidos na geração atual.
+
+Reconhece listas com rótulos como Palavras-chave, Keywords, Palabras clave,
+Mots-clés, Schlüsselwörter, Descritores e equivalentes chineses/japoneses.
+Expressões completas são preservadas. Maiúsculas e variantes de acento são
+agrupadas; traduções permanecem separadas. Não usa as tags do Zotero como
+substitutas de palavras-chave declaradas no PDF.
+
+Duas contagens:
+1. Artigos que declaram o termo como palavra-chave: define seu tamanho na nuvem.
+2. Ocorrências nos textos: total no texto integral extraído de TODOS os PDFs
+   analisados, incluindo listas de palavras-chave e textos que não o declaram.
+   A contagem é literal, com normalização de caixa, acentos, espaços e hifenização
+   de palavras em quebras de linha; singular/plural e traduções não são unidos.
+
+Um artigo com listas repetidas ou vários PDFs conta uma vez na primeira medida.
+Na segunda medida, as ocorrências dos PDFs analisados são somadas.
+
+Clique no termo ou em Ver origem. A tabela identifica artigo, chave do item,
+nome/chave do PDF, declaração Sim/Não, ocorrências naquele PDF e lista reconhecida.
+Ver no Zotero seleciona o registro correspondente, quando ele ainda está disponível.
+Conferir identificação por artigo mostra também os PDFs sem palavras-chave reconhecidas.
+
+Salvar no Zotero preserva o conjunto de dados, incluindo listas e origens, no
+anexo interativo da nuvem. A imagem principal desse anexo continua sendo a nuvem
+de texto; sua segunda aba aparece ao reabrir a ferramenta. A aba permite exportar
+sua própria imagem PNG/JPG/SVG e CSV com ambas as contagens e origens.
+
+LEITURA DOS PDFs
+A identificação depende do texto extraído e de listas reconhecíveis no PDF.
+Layout em colunas e extração de PDF podem alterar separadores. Consulte a lista
+reconhecida exibida na origem para conferir o resultado. PDFs em imagem continuam
+precisando de OCR, como na versão anterior. Itens/PDFs indisponíveis ou sem texto
+continuam sujeitos aos avisos da geração de nuvem de texto.
+
+Os dados de uma nuvem salva são uma fotografia da análise. Se o PDF ou as tags
+forem alterados no Zotero, gere uma nova nuvem para refletir as mudanças.
+
+VALIDAÇÃO DESTA VERSÃO
+Foram executados testes de contagem, fontes, coleções/subcoleções, exclusão de
+tags automáticas, arquivos CSV, preservação do núcleo antigo e eventos da
+interface em DOM simulado. XML e sintaxe JavaScript foram conferidos.
+O Zotero desktop/Gecko não está disponível no ambiente de desenvolvimento desta
+entrega; a instalação e a renderização nativa devem ser verificadas no Zotero.
+
+DOCUMENTAÇÃO OFICIAL CONSULTADA
+https://www.zotero.org/support/collections_and_tags
+https://www.zotero.org/support/dev/client_coding/javascript_api
+
+O pacote contém os códigos do plugin. Não requer Python ou dependências extras
+para uso no Zotero. Não utiliza serviços externos para analisar tags/palavras-chave.

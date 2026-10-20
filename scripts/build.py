@@ -6,7 +6,10 @@ out = root / "dist" / f"nuvem-palavras-z-{version}.xpi"
 out.parent.mkdir(exist_ok=True)
 files = [root / name for name in ("manifest.json", "bootstrap.js", "plugin.js", "icon.svg")]
 files += sorted(path for path in (root / "content").rglob("*") if path.is_file())
+if (root / "LEIA-ME.txt").is_file():
+    files.append(root / "LEIA-ME.txt")
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
     for path in files:
         archive.write(path, path.relative_to(root))
 print(out)
+
