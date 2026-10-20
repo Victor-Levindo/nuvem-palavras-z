@@ -4,7 +4,7 @@
 
 Autor: **Victor Hugo Levindo** · Versão publicada neste repositório: **0.9.4**.
 
-Visualize o vocabulário de um ou mais PDFs, investigue palavras e expressões em cada artigo e guarde os ajustes numa nuvem vinculada ao Zotero. As atualizações do projeto ampliam essa exploração para tags e palavras-chave dos registros bibliográficos.
+Visualize o vocabulário de um ou mais PDFs, investigue palavras e expressões em cada artigo e guarde os ajustes numa nuvem vinculada ao Zotero. A entrega 0.10.0 amplia essa exploração para tags manuais do Zotero e palavras-chave declaradas pelos autores nos PDFs; veja as diferenças e a disponibilidade abaixo.
 
 ![Exemplo de nuvem com texto fictício](docs/images/exemplo-nuvem.png)
 
@@ -29,19 +29,37 @@ O instalador deve manter a extensão `.xpi`. O ZIP do código-fonte é destinado
 - Exportação JPG, PNG, SVG e CSV de frequências ou contagens por artigo.
 - Interface em português, inglês, espanhol, francês, alemão, chinês e japonês. O idioma da interface é separado dos filtros linguísticos.
 
-## Novidades da atualização 0.10.0
+## O que mudou da 0.9.4 para a 0.10.0
 
-A atualização reúne recursos para explorar diferentes fontes de termos:
+A entrega da **0.10.0**, registrada em **6 de outubro de 2026**, acrescenta duas formas de explorar termos, preservando a geração de nuvens a partir do texto dos PDFs.
 
-- **Nuvens por tags:** visualização das etiquetas associadas aos itens.
-- **Nuvens por palavras-chave (keywords):** exploração das palavras-chave registradas nos itens, com análise de um item ou de uma coleção.
-- **Contagens por artigo:** consulta de palavras e combinações para examinar sua distribuição entre os documentos.
-- **Expressões compostas:** inclusão de expressões na nuvem e sugestões de expressões frequentes.
-- **Personalização visual:** cores em tons quentes e ajustes na organização da interface.
+| Recurso | 0.9.4 | Novidade na entrega 0.10.0 |
+| --- | --- | --- |
+| Nuvem do texto dos PDFs | Já disponível para um ou mais documentos | Mantida |
+| Consulta de palavras e expressões por artigo | Já disponível | Mantida; não é um recurso novo desta atualização |
+| Expressões compostas e sugestões de expressões | Já disponíveis | Mantidas; não são recursos novos desta atualização |
+| Nuvem de tags manuais | Não disponível | Opção separada no menu do botão direito, para itens e coleções; funciona sem PDF e exclui tags automáticas |
+| Palavras-chave declaradas pelos autores nos PDFs | Sem aba específica | Aba preenchida automaticamente ao gerar a nuvem, também na análise de coleções e subcoleções |
+| Contagens das palavras-chave | Sem análise específica | Quantidade de artigos que declaram cada termo e quantidade de ocorrências nos textos analisados |
+| Origem das palavras-chave | Sem consulta específica | Artigo/PDF de origem, lista de palavras-chave declaradas, contagem individual, acesso por **Ver no Zotero** e exportação CSV |
 
-As palavras-chave dependem dos metadados disponíveis nos registros; esse recurso não significa extração automática de palavras-chave dos autores em todos os PDFs.
+### Como interpretar as palavras-chave
 
-**Disponibilidade:** o instalador 0.10.0 foi localizado entre os arquivos do projeto, mas ainda não foi incorporado a este repositório. O link de instalação acima continua apontando para a versão publicada 0.9.4. Esta atualização da documentação não altera o código nem os instaladores publicados.
+A aba busca as palavras-chave **declaradas pelos autores no texto extraído dos PDFs**. Elas são diferentes das tags criadas manualmente no Zotero. O recurso não propõe novas palavras-chave por interpretação do conteúdo.
+
+- **Artigos declarantes:** quantos artigos apresentam o termo em sua lista de palavras-chave. Uma repetição na lista do mesmo artigo não conta como outro artigo.
+- **Ocorrências no texto:** frequência do termo nos textos analisados; o total pode incluir artigos que usam o termo sem declará-lo como palavra-chave.
+- **Origem:** permite verificar de qual artigo/PDF vem a declaração e consultar as contagens individuais.
+
+A identificação depende do texto extraível e do reconhecimento da lista de palavras-chave; não há garantia de detecção em todos os PDFs. PDFs somente em imagem precisam de OCR.
+
+### Disponibilidade da 0.10.0
+
+O instalador 0.10.0 foi entregue separadamente, mas **a versão publicada para download neste repositório continua sendo a 0.9.4**. A tabela documenta a entrega 0.10.0; o código-fonte, o manifesto e o instalador publicados aqui ainda correspondem à 0.9.4.
+
+Na entrega da 0.10.0, foram registrados testes com ambiente e APIs do Zotero simulados, incluindo contagens, controles, salvamento, CSV e fluxos de uso. A instalação e a interface no Zotero desktop ainda precisam de verificação nativa. Esta revisão da documentação não realizou uma nova validação do instalador 0.10.0.
+
+O histórico das alterações está em [CHANGELOG.md](CHANGELOG.md).
 
 ## Como usar
 
