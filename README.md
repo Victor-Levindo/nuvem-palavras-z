@@ -1,10 +1,10 @@
 # Nuvem de Palavras Z
 
-**Plugin para Zotero: nuvens de palavras e consulta de ocorrências por artigo.**
+**Plugin para Zotero: explore textos de PDFs, tags e palavras-chave por meio de nuvens de palavras e consultas por artigo.**
 
-Autor: **Victor Hugo Levindo** · Versão **0.9.4**.
+Autor: **Victor Hugo Levindo** · Versão publicada neste repositório: **0.9.4**.
 
-Crie uma visão do vocabulário de um ou mais PDFs, investigue palavras e expressões em cada artigo e guarde os ajustes numa nuvem vinculada ao Zotero.
+Visualize o vocabulário de um ou mais PDFs, investigue palavras e expressões em cada artigo e guarde os ajustes numa nuvem vinculada ao Zotero. As atualizações do projeto ampliam essa exploração para tags e palavras-chave dos registros bibliográficos.
 
 ![Exemplo de nuvem com texto fictício](docs/images/exemplo-nuvem.png)
 
@@ -28,6 +28,20 @@ O instalador deve manter a extensão `.xpi`. O ZIP do código-fonte é destinado
 - Sugestões de expressões frequentes abaixo da busca e inclusão de expressões na nuvem.
 - Exportação JPG, PNG, SVG e CSV de frequências ou contagens por artigo.
 - Interface em português, inglês, espanhol, francês, alemão, chinês e japonês. O idioma da interface é separado dos filtros linguísticos.
+
+## Novidades da atualização 0.10.0
+
+A atualização reúne recursos para explorar diferentes fontes de termos:
+
+- **Nuvens por tags:** visualização das etiquetas associadas aos itens.
+- **Nuvens por palavras-chave (keywords):** exploração das palavras-chave registradas nos itens, com análise de um item ou de uma coleção.
+- **Contagens por artigo:** consulta de palavras e combinações para examinar sua distribuição entre os documentos.
+- **Expressões compostas:** inclusão de expressões na nuvem e sugestões de expressões frequentes.
+- **Personalização visual:** cores em tons quentes e ajustes na organização da interface.
+
+As palavras-chave dependem dos metadados disponíveis nos registros; esse recurso não significa extração automática de palavras-chave dos autores em todos os PDFs.
+
+**Disponibilidade:** o instalador 0.10.0 foi localizado entre os arquivos do projeto, mas ainda não foi incorporado a este repositório. O link de instalação acima continua apontando para a versão publicada 0.9.4. Esta atualização da documentação não altera o código nem os instaladores publicados.
 
 ## Como usar
 
